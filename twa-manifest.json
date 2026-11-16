@@ -1,0 +1,40 @@
+{
+  "packageId": "com.spideresports.app",
+  "host": "ais-pre-nmn6m2arrwizbpebrsjviz-903361411683.asia-southeast1.run.app",
+  "name": "SPIDER ESPORTS",
+  "launcherName": "SPIDER FF",
+  "display": "standalone",
+  "themeColor": "#09090B",
+  "themeColorDark": "#09090B",
+  "navigationColor": "#09090B",
+  "navigationColorDark": "#09090B",
+  "navigationDividerColor": "#18181B",
+  "navigationDividerColorDark": "#18181B",
+  "backgroundColor": "#09090B",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://ais-pre-nmn6m2arrwizbpebrsjviz-903361411683.asia-southeast1.run.app/pwa-512x512.png",
+  "maskableIconUrl": "https://ais-pre-nmn6m2arrwizbpebrsjviz-903361411683.asia-southeast1.run.app/pwa-maskable-512x512.png",
+  "monochromeIconUrl": "https://ais-pre-nmn6m2arrwizbpebrsjviz-903361411683.asia-southeast1.run.app/pwa-192x192.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "spideresports"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://ais-pre-nmn6m2arrwizbpebrsjviz-903361411683.asia-southeast1.run.app/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://ais-pre-nmn6m2arrwizbpebrsjviz-903361411683.asia-southeast1.run.app/",
+  "minSdkVersion": 21,
+  "orientation": "portrait"
+}

@@ -1,0 +1,297 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public player profile, competitive statistics, and single Spider Coin balance for SPIDER ESPORTS.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "minLength": 3, "maxLength": 24, "pattern": "^[a-zA-Z0-9_]+$" },
+        "usernameLower": { "type": "string", "minLength": 3, "maxLength": 24, "pattern": "^[a-z0-9_]+$" },
+        "freeFireIgn": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "freeFireUid": { "type": "string", "minLength": 6, "maxLength": 16, "pattern": "^[0-9]+$" },
+        "avatarUrl": { "type": "string", "maxLength": 300 },
+        "activeTheme": { "type": "string", "enum": ["obsidian", "crimson-grid", "arachnid-gold", "stealth-carbon"] },
+        "activeBadge": { "type": "string", "maxLength": 48 },
+        "tournamentsJoined": { "type": "number" },
+        "matchesPlayed": { "type": "number" },
+        "totalWins": { "type": "number" },
+        "totalKills": { "type": "number" },
+        "totalPoints": { "type": "number" },
+        "coins": { "type": "number" },
+        "unlockedCosmetics": { "type": "array" },
+        "achievements": { "type": "array" },
+        "suspended": { "type": "boolean" },
+        "fcmEnabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "username", "usernameLower", "freeFireIgn", "freeFireUid", "tournamentsJoined", "matchesPlayed", "totalWins", "totalKills", "totalPoints", "coins", "suspended", "createdAt", "updatedAt"]
+    },
+    "UserPrivate": {
+      "title": "UserPrivate",
+      "description": "Isolated PII record for authenticated user email and consent state.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "adConsentAccepted": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "adConsentAccepted", "updatedAt"]
+    },
+    "UsernameClaim": {
+      "title": "UsernameClaim",
+      "description": "Unique username reservation index mapped by lowercase username.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "minLength": 3, "maxLength": 24 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "username", "createdAt"]
+    },
+    "Tournament": {
+      "title": "Tournament",
+      "description": "Free Free Fire community tournament event with Spider Coin rewards.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 3, "maxLength": 100 },
+        "category": { "type": "string", "enum": ["Battle Royale", "Clash Squad", "Lone Wolf"] },
+        "mode": { "type": "string", "enum": ["Solo", "Duo", "Squad", "CS 1v1", "CS 2v2", "CS 4v4", "Lone Wolf 1v1", "Lone Wolf 2v2"] },
+        "mapName": { "type": "string", "minLength": 2, "maxLength": 48 },
+        "bannerUrl": { "type": "string", "maxLength": 300 },
+        "matchDate": { "type": "string", "maxLength": 32 },
+        "matchTime": { "type": "string", "maxLength": 32 },
+        "registrationDeadline": { "type": "string", "format": "date-time" },
+        "credentialsReleaseAt": { "type": "string", "format": "date-time" },
+        "maxSlots": { "type": "number" },
+        "filledSlots": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "upcoming", "live", "completed", "cancelled"] },
+        "featured": { "type": "boolean" },
+        "published": { "type": "boolean" },
+        "rules": { "type": "array" },
+        "coinReward": { "type": "number" },
+        "perKillCoins": { "type": "number" },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "category", "mode", "mapName", "matchDate", "matchTime", "registrationDeadline", "credentialsReleaseAt", "maxSlots", "filledSlots", "status", "featured", "published", "rules", "coinReward", "perKillCoins", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Registration": {
+      "title": "Registration",
+      "description": "Player or team registration for a free tournament.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "tournamentId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "freeFireIgn": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "freeFireUid": { "type": "string", "minLength": 6, "maxLength": 16, "pattern": "^[0-9]+$" },
+        "teamName": { "type": "string", "maxLength": 40 },
+        "teammates": { "type": "array" },
+        "slotNumber": { "type": "number" },
+        "status": { "type": "string", "enum": ["confirmed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "tournamentId", "userId", "username", "freeFireIgn", "freeFireUid", "slotNumber", "status", "createdAt", "updatedAt"]
+    },
+    "Match": {
+      "title": "Match",
+      "description": "Match schedule and live room status for a tournament.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "tournamentId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 3, "maxLength": 100 },
+        "mode": { "type": "string", "maxLength": 32 },
+        "status": { "type": "string", "enum": ["scheduled", "room_ready", "live", "completed", "cancelled"] },
+        "credentialsPublished": { "type": "boolean" },
+        "credentialsReleaseAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "tournamentId", "title", "mode", "status", "credentialsPublished", "credentialsReleaseAt", "updatedAt"]
+    },
+    "MatchCredential": {
+      "title": "MatchCredential",
+      "description": "Protected room ID and password restricted to registered participants at release time.",
+      "type": "object",
+      "properties": {
+        "tournamentId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "roomId": { "type": "string", "minLength": 2, "maxLength": 48 },
+        "roomPassword": { "type": "string", "minLength": 1, "maxLength": 48 },
+        "releaseAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["tournamentId", "roomId", "roomPassword", "releaseAt", "updatedAt"]
+    },
+    "TournamentResult": {
+      "title": "TournamentResult",
+      "description": "Admin-verified match results, kill counts, and winners.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "tournamentId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "tournamentTitle": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "winnerUserId": { "type": "string", "maxLength": 128 },
+        "winnerName": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "totalKills": { "type": "number" },
+        "standings": { "type": "array" },
+        "verified": { "type": "boolean" },
+        "publishedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "tournamentId", "tournamentTitle", "winnerName", "totalKills", "standings", "verified", "publishedAt"]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Global and weekly player standings entry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "avatarUrl": { "type": "string", "maxLength": 300 },
+        "totalWins": { "type": "number" },
+        "totalKills": { "type": "number" },
+        "totalPoints": { "type": "number" },
+        "weeklyWins": { "type": "number" },
+        "weeklyKills": { "type": "number" },
+        "weeklyPoints": { "type": "number" },
+        "coins": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "username", "totalWins", "totalKills", "totalPoints", "weeklyWins", "weeklyKills", "weeklyPoints", "coins", "updatedAt"]
+    },
+    "WithdrawalRequest": {
+      "title": "WithdrawalRequest",
+      "description": "Player Spider Coin withdrawal request converted at 1000 coins = ₹10.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "freeFireUid": { "type": "string", "minLength": 6, "maxLength": 16, "pattern": "^[0-9]+$" },
+        "coins": { "type": "number" },
+        "rupees": { "type": "number" },
+        "method": { "type": "string", "enum": ["upi", "bank"] },
+        "destination": { "type": "string", "minLength": 5, "maxLength": 120 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "adminNote": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "username", "freeFireUid", "coins", "rupees", "method", "destination", "status", "createdAt", "updatedAt"]
+    },
+    "NotificationItem": {
+      "title": "NotificationItem",
+      "description": "Targeted or broadcast tournament notification.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "body": { "type": "string", "minLength": 2, "maxLength": 300 },
+        "type": { "type": "string", "enum": ["tournament", "registration", "room", "reminder", "cancellation", "result", "achievement", "withdrawal", "system"] },
+        "tournamentId": { "type": "string", "maxLength": 128 },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title", "body", "type", "read", "createdAt"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Community announcement or promotional banner.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 3, "maxLength": 100 },
+        "message": { "type": "string", "minLength": 3, "maxLength": 400 },
+        "priority": { "type": "string", "enum": ["normal", "high"] },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "message", "priority", "active", "createdAt"]
+    },
+    "AdminSettings": {
+      "title": "AdminSettings",
+      "description": "Platform configuration, AdMob unit IDs, ad controls, and promotional banner settings.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "adMobMode": { "type": "string", "enum": ["test", "production"] },
+        "adMobAppId": { "type": "string", "maxLength": 128 },
+        "adSenseClientId": { "type": "string", "maxLength": 128 },
+        "bannerAdUnitId": { "type": "string", "maxLength": 128 },
+        "interstitialAdUnitId": { "type": "string", "maxLength": 128 },
+        "rewardedAdUnitId": { "type": "string", "maxLength": 128 },
+        "bannerAdsEnabled": { "type": "boolean" },
+        "interstitialAdsEnabled": { "type": "boolean" },
+        "rewardedAdsEnabled": { "type": "boolean" },
+        "interstitialCooldownSeconds": { "type": "number" },
+        "bannerPlacement": { "type": "string", "enum": ["all_screens", "home_and_matches", "home_only"] },
+        "featuredAnnouncement": { "type": "string", "maxLength": 200 },
+        "maintenanceMode": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "adMobMode", "bannerAdUnitId", "interstitialAdUnitId", "rewardedAdUnitId", "maintenanceMode", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Public player profile and career statistics."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivate" },
+      "description": "Private PII document containing user email and consent status."
+    },
+    "/usernames/{usernameLower}": {
+      "schema": { "$ref": "#/entities/UsernameClaim" },
+      "description": "Unique username lock documents."
+    },
+    "/tournaments/{tournamentId}": {
+      "schema": { "$ref": "#/entities/Tournament" },
+      "description": "Free Fire community tournament listings."
+    },
+    "/registrations/{registrationId}": {
+      "schema": { "$ref": "#/entities/Registration" },
+      "description": "Tournament participant registrations."
+    },
+    "/matches/{matchId}": {
+      "schema": { "$ref": "#/entities/Match" },
+      "description": "Match schedules and room readiness state."
+    },
+    "/matches/{matchId}/credentials/{credId}": {
+      "schema": { "$ref": "#/entities/MatchCredential" },
+      "description": "Room ID and password protected until release time for registered participants."
+    },
+    "/results/{resultId}": {
+      "schema": { "$ref": "#/entities/TournamentResult" },
+      "description": "Verified match winners and standings."
+    },
+    "/leaderboards/{entryId}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "Global and weekly competitive leaderboard standings."
+    },
+    "/withdrawals/{withdrawalId}": {
+      "schema": { "$ref": "#/entities/WithdrawalRequest" },
+      "description": "Spider Coin withdrawal requests (1000 coins = ₹10)."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/NotificationItem" },
+      "description": "Player and broadcast tournament notifications."
+    },
+    "/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Official SPIDER ESPORTS community announcements."
+    },
+    "/admin_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/AdminSettings" },
+      "description": "Admin-controlled AdMob IDs and platform configuration."
+    }
+  }
+}

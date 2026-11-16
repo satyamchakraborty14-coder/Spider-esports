@@ -1,0 +1,8 @@
+{
+	"appId": "com.spideresports.app",
+	"appName": "SPIDER ESPORTS",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	}
+}

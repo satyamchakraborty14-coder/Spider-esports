@@ -23,6 +23,9 @@
         "achievements": { "type": "array" },
         "suspended": { "type": "boolean" },
         "fcmEnabled": { "type": "boolean" },
+        "lastDailyClaimDate": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "lastDailyClaimAt": { "type": "string", "format": "date-time" },
+        "dailyClaimStreak": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },

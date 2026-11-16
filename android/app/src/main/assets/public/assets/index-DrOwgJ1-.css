@@ -84,6 +84,7 @@
     --color-amber-400: oklch(82.8% .189 84.429);
     --color-amber-500: oklch(76.9% .188 70.08);
     --color-amber-950: oklch(27.9% .077 45.635);
+    --color-emerald-200: oklch(90.5% .093 164.15);
     --color-emerald-300: oklch(84.5% .143 164.978);
     --color-emerald-400: oklch(76.5% .177 163.223);
     --color-emerald-500: oklch(69.6% .17 162.48);
@@ -109,6 +110,7 @@
     --container-sm: 24rem;
     --container-md: 28rem;
     --container-lg: 32rem;
+    --container-xl: 36rem;
     --container-2xl: 42rem;
     --container-3xl: 48rem;
     --container-7xl: 80rem;
@@ -624,6 +626,10 @@
     display: none;
   }
 
+  .inline-block {
+    display: inline-block;
+  }
+
   .inline-flex {
     display: inline-flex;
   }
@@ -678,6 +684,10 @@
 
   .h-10 {
     height: calc(var(--spacing) * 10);
+  }
+
+  .h-11 {
+    height: calc(var(--spacing) * 11);
   }
 
   .h-12 {
@@ -812,6 +822,10 @@
     width: calc(var(--spacing) * 10);
   }
 
+  .w-11 {
+    width: calc(var(--spacing) * 11);
+  }
+
   .w-12 {
     width: calc(var(--spacing) * 12);
   }
@@ -868,6 +882,10 @@
     max-width: var(--container-sm);
   }
 
+  .max-w-xl {
+    max-width: var(--container-xl);
+  }
+
   .min-w-0 {
     min-width: 0;
   }
@@ -914,6 +932,16 @@
 
   .origin-left {
     transform-origin: 0;
+  }
+
+  .translate-x-1 {
+    --tw-translate-x: var(--spacing);
+    translate: var(--tw-translate-x) var(--tw-translate-y);
+  }
+
+  .translate-x-6 {
+    --tw-translate-x: calc(var(--spacing) * 6);
+    translate: var(--tw-translate-x) var(--tw-translate-y);
   }
 
   .-translate-y-1\/2 {
@@ -1299,6 +1327,16 @@
     }
   }
 
+  .border-emerald-400\/50 {
+    border-color: #00d29480;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .border-emerald-400\/50 {
+      border-color: color-mix(in oklab, var(--color-emerald-400) 50%, transparent);
+    }
+  }
+
   .border-emerald-500\/20 {
     border-color: #00bb7f33;
   }
@@ -1463,6 +1501,20 @@
     background-color: var(--color-amber-400);
   }
 
+  .bg-amber-500 {
+    background-color: var(--color-amber-500);
+  }
+
+  .bg-amber-500\/10 {
+    background-color: #f99c001a;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .bg-amber-500\/10 {
+      background-color: color-mix(in oklab, var(--color-amber-500) 10%, transparent);
+    }
+  }
+
   .bg-amber-500\/15 {
     background-color: #f99c0026;
   }
@@ -1510,6 +1562,20 @@
   @supports (color: color-mix(in lab, red, red)) {
     .bg-black\/80 {
       background-color: color-mix(in oklab, var(--color-black) 80%, transparent);
+    }
+  }
+
+  .bg-emerald-500 {
+    background-color: var(--color-emerald-500);
+  }
+
+  .bg-emerald-500\/10 {
+    background-color: #00bb7f1a;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .bg-emerald-500\/10 {
+      background-color: color-mix(in oklab, var(--color-emerald-500) 10%, transparent);
     }
   }
 
@@ -1593,6 +1659,10 @@
 
   .bg-zinc-500 {
     background-color: var(--color-zinc-500);
+  }
+
+  .bg-zinc-700 {
+    background-color: var(--color-zinc-700);
   }
 
   .bg-zinc-800 {
@@ -1761,6 +1831,10 @@
 
   .py-4 {
     padding-block: calc(var(--spacing) * 4);
+  }
+
+  .py-5 {
+    padding-block: calc(var(--spacing) * 5);
   }
 
   .py-6 {
@@ -1988,6 +2062,10 @@
     color: var(--color-black);
   }
 
+  .text-emerald-200 {
+    color: var(--color-emerald-200);
+  }
+
   .text-emerald-300 {
     color: var(--color-emerald-300);
   }
@@ -2078,6 +2156,11 @@
 
   .accent-\[\#E11D48\] {
     accent-color: #e11d48;
+  }
+
+  .shadow {
+    --tw-shadow: 0 1px 3px 0 var(--tw-shadow-color, #0000001a), 0 1px 2px -1px var(--tw-shadow-color, #0000001a);
+    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
   }
 
   .shadow-2xl {
@@ -2231,12 +2314,20 @@
       background-color: oklab(58.5838% .211667 .0670822 / .1);
     }
 
+    .hover\:bg-\[\#E11D48\]\/20:hover {
+      background-color: oklab(58.5838% .211667 .0670822 / .2);
+    }
+
     .hover\:bg-\[\#E11D48\]\/25:hover {
       background-color: oklab(58.5838% .211667 .0670822 / .25);
     }
 
     .hover\:bg-\[\#F43F5E\]:hover {
       background-color: #f43f5e;
+    }
+
+    .hover\:bg-amber-400:hover {
+      background-color: var(--color-amber-400);
     }
 
     .hover\:bg-amber-500\/25:hover {
@@ -2329,6 +2420,15 @@
   .focus\:outline-none:focus {
     --tw-outline-style: none;
     outline-style: none;
+  }
+
+  .focus-visible\:ring-2:focus-visible {
+    --tw-ring-shadow: var(--tw-ring-inset, ) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);
+    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+  }
+
+  .focus-visible\:ring-\[\#E11D48\]:focus-visible {
+    --tw-ring-color: #e11d48;
   }
 
   .focus-visible\:outline-2:focus-visible {

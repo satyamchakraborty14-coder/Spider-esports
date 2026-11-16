@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import type {
+  AdminSettings,
   MatchCredential,
   MatchInfo,
   Registration,
@@ -35,7 +36,9 @@ import {
   joinTournamentInFirestore,
   subscribeTournamentRegistrations,
 } from '../lib/firestoreService';
+import { preloadInterstitialAd } from '../lib/admobBridge';
 import { BRAND_ASSETS } from '../lib/seedData';
+import { AdMobBannerSlot } from './AdMobUnits';
 
 interface MatchDetailsModalProps {
   tournament: Tournament | null;
@@ -45,6 +48,9 @@ interface MatchDetailsModalProps {
   isSignedIn: boolean;
   isEmailVerified: boolean;
   isAdmin: boolean;
+  adminSettings: AdminSettings;
+  consentAccepted: boolean;
+  onAfterJoinConfirmation?: () => void;
   onClose: () => void;
   onRequireAuth: () => void;
   onSuccessToast: (msg: string) => void;
@@ -58,6 +64,9 @@ export function MatchDetailsModal({
   isSignedIn,
   isEmailVerified,
   isAdmin,
+  adminSettings,
+  consentAccepted,
+  onAfterJoinConfirmation,
   onClose,
   onRequireAuth,
   onSuccessToast,
@@ -104,8 +113,9 @@ export function MatchDetailsModal({
     const unsub = subscribeTournamentRegistrations(tournament.id, (items) => {
       setRegistrations(items);
     });
+    void preloadInterstitialAd(adminSettings, consentAccepted);
     return () => unsub();
-  }, [tournament?.id, profile]);
+  }, [tournament?.id, profile, adminSettings, consentAccepted]);
 
   const myRegistration = profile
     ? registrations.find((r) => r.userId === profile.uid && r.status === 'confirmed')
@@ -219,6 +229,7 @@ export function MatchDetailsModal({
         teamName: modeDef.requiredTeammates > 0 && teamName.trim() ? teamName.trim() : undefined,
       });
       onSuccessToast(`Joined ${tournament.title}! Slot #${res.slotNumber} confirmed.`);
+      onAfterJoinConfirmation?.();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Unable to complete registration.');
     } finally {
@@ -618,6 +629,14 @@ export function MatchDetailsModal({
             </div>
           )}
         </section>
+
+        {/* Non-overlapping AdMob Banner Slot below registration & participants */}
+        <AdMobBannerSlot
+          settings={adminSettings}
+          screen="matches"
+          placementLabel="Match Join & Details Sponsor"
+          consentAccepted={consentAccepted}
+        />
       </div>
     </div>
   );

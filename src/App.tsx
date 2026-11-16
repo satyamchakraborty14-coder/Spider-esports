@@ -41,6 +41,12 @@ import type {
   WithdrawalRequest,
 } from './types/esports';
 import { canShowInterstitial } from './utils/coinSystem';
+import {
+  readGlobalAdConsent,
+  SPIDER_AD_CONSENT_EVENT,
+  SPIDER_AD_CONSENT_STORAGE_KEY,
+  writeGlobalAdConsent,
+} from './utils/adConsent';
 import { resolveEffectiveAdMobConfig } from './utils/admobHelpers';
 import { SplashScreen } from './components/SplashScreen';
 import { BottomNav, TopNav, type AppTab } from './components/Navigation';
@@ -89,14 +95,10 @@ export default function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  // AdMob state
-  const [consentAccepted, setConsentAccepted] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('spider_ad_consent') === '1';
-    } catch {
-      return false;
-    }
-  });
+  // AdMob GDPR Consent State (persisted globally under spider_ad_consent)
+  const [consentAccepted, setConsentAccepted] = useState<boolean>(
+    () => readGlobalAdConsent().personalizedAdsEnabled
+  );
   const [lastInterstitialAt, setLastInterstitialAt] = useState(0);
 
   const showToast = (msg: string) => {
@@ -292,12 +294,25 @@ export default function App() {
 
   const updateConsentPreference = (accepted: boolean) => {
     setConsentAccepted(accepted);
-    try {
-      localStorage.setItem('spider_ad_consent', accepted ? '1' : '0');
-    } catch {
-      // Ignore storage errors
-    }
+    writeGlobalAdConsent(accepted);
   };
+
+  useEffect(() => {
+    const handleStorageSync = (e: StorageEvent) => {
+      if (e.key === SPIDER_AD_CONSENT_STORAGE_KEY) {
+        setConsentAccepted(readGlobalAdConsent().personalizedAdsEnabled);
+      }
+    };
+    const handleCustomSync = () => {
+      setConsentAccepted(readGlobalAdConsent().personalizedAdsEnabled);
+    };
+    window.addEventListener('storage', handleStorageSync);
+    window.addEventListener(SPIDER_AD_CONSENT_EVENT, handleCustomSync);
+    return () => {
+      window.removeEventListener('storage', handleStorageSync);
+      window.removeEventListener(SPIDER_AD_CONSENT_EVENT, handleCustomSync);
+    };
+  }, []);
 
   useEffect(() => {
     void initializeAdMobRuntime(adminSettings, consentAccepted).then(() =>
@@ -317,7 +332,10 @@ export default function App() {
     });
   }, []);
 
-  const maybeShowNaturalBreakInterstitial = (isSafeContext: boolean) => {
+  const maybeShowNaturalBreakInterstitial = (
+    isSafeContext: boolean,
+    isCompletedAction = false
+  ) => {
     // Web/PWA never fakes interstitial impressions; interstitials run only inside native Android APK
     if (!Capacitor.isNativePlatform()) return;
     if (!isSafeContext || authModalOpen || Boolean(needsOnboardingUser)) return;
@@ -326,7 +344,7 @@ export default function App() {
     });
     if (!effectiveConfig.interstitialAdsEnabled) return;
     const cooldownMs = Math.max(90_000, effectiveConfig.interstitialCooldownMs);
-    if (lastInterstitialAt === 0) {
+    if (!isCompletedAction && lastInterstitialAt === 0) {
       setLastInterstitialAt(Date.now());
       return;
     }
@@ -335,7 +353,8 @@ export default function App() {
         lastShownAtMs: lastInterstitialAt,
         cooldownMs,
         isLiveMatchOrJoining:
-          Boolean(selectedTournament && selectedTournament.status !== 'completed') ||
+          (!isCompletedAction &&
+            Boolean(selectedTournament && selectedTournament.status !== 'completed')) ||
           authModalOpen ||
           Boolean(needsOnboardingUser),
       })
@@ -473,6 +492,7 @@ export default function App() {
               <HomeView
                 profile={profile}
                 isSignedIn={Boolean(authUser)}
+                isEmailVerified={Boolean(authUser?.emailVerified)}
                 tournaments={displayTournaments}
                 results={displayResults}
                 announcements={displayAnnouncements}
@@ -480,17 +500,12 @@ export default function App() {
                 registeredTournamentIds={registeredTournamentIds}
                 adminSettings={adminSettings}
                 consentAccepted={consentAccepted}
-                onAcceptConsent={() => {
-                  setConsentAccepted(true);
-                  try {
-                    localStorage.setItem('spider_ad_consent', '1');
-                  } catch {
-                    // Ignore storage failure
-                  }
-                }}
+                onAcceptConsent={() => updateConsentPreference(true)}
+                onAfterDailyClaim={() => maybeShowNaturalBreakInterstitial(true, true)}
                 onSelectTournament={(t) => setSelectedTournamentId(t.id)}
                 onNavigateTab={handleSelectTab}
                 onOpenAuth={() => setAuthModalOpen(true)}
+                onToast={showToast}
               />
             )}
 
@@ -593,6 +608,9 @@ export default function App() {
         isSignedIn={Boolean(authUser)}
         isEmailVerified={Boolean(authUser?.emailVerified)}
         isAdmin={isAdmin}
+        adminSettings={adminSettings}
+        consentAccepted={consentAccepted}
+        onAfterJoinConfirmation={() => maybeShowNaturalBreakInterstitial(true, true)}
         onClose={() => {
           const closingCompletedMatch = selectedTournament?.status === 'completed';
           setSelectedTournamentId(null);

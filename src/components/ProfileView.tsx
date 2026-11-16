@@ -30,7 +30,7 @@ import {
   unlockRewardedAdCosmetic,
   updatePlayerIdentity,
 } from '../lib/firestoreService';
-import { openAdPrivacyOptions, showRewardedAdForCosmetic } from '../lib/admobBridge';
+import { showRewardedAdForCosmetic } from '../lib/admobBridge';
 import { BRAND_ASSETS } from '../lib/seedData';
 import type {
   AdminSettings,
@@ -66,7 +66,9 @@ import {
   summarizeWithdrawals,
   type WithdrawalFilterStatus,
 } from '../utils/withdrawalHistory';
+import { getAdConsentSummary } from '../utils/adConsent';
 import { AdMobBannerSlot } from './AdMobUnits';
+import { ConsentManagementModal } from './ConsentManagementModal';
 import { WithdrawalHistoryModal } from './WithdrawalHistoryModal';
 import { sendEmailVerification } from 'firebase/auth';
 
@@ -103,7 +105,7 @@ export function ProfileView({
   results,
   leaderboard,
   adminSettings,
-  consentAccepted = true,
+  consentAccepted = false,
   onUpdateConsent,
   onOpenAuth,
   onNavigateResults,
@@ -135,6 +137,7 @@ export function ProfileView({
   const [submittingWithdraw, setSubmittingWithdraw] = useState(false);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<WithdrawalFilterStatus>('all');
+  const [consentModalOpen, setConsentModalOpen] = useState(false);
 
   const openHistoryModal = (filter: WithdrawalFilterStatus = 'all') => {
     setHistoryFilter(filter);
@@ -1187,24 +1190,12 @@ export function ProfileView({
             </button>
             <button
               type="button"
-              onClick={async () => {
-                const outcome = await openAdPrivacyOptions();
-                if (outcome === 'native_opened') {
-                  onToast('Google UMP Ad Privacy options updated.');
-                } else {
-                  const next = !consentAccepted;
-                  onUpdateConsent?.(next);
-                  onToast(
-                    next
-                      ? 'Personalized AdMob preference enabled.'
-                      : 'Switched to Non-Personalized AdMob preference.'
-                  );
-                }
-              }}
-              className="min-h-[36px] px-3 py-1.5 rounded-lg border border-white/10 text-xs text-zinc-300 hover:text-white inline-flex items-center gap-1.5"
+              data-testid="open-gdpr-consent-btn"
+              onClick={() => setConsentModalOpen(true)}
+              className="min-h-[36px] px-3 py-1.5 rounded-lg border border-[#E11D48]/35 bg-[#E11D48]/10 text-xs font-medium text-white hover:bg-[#E11D48]/20 inline-flex items-center gap-1.5"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-[#E11D48]" />
-              Ad Privacy ({consentAccepted ? 'Standard' : 'Non-Personalized'})
+              Ad Privacy &amp; GDPR Consent ({getAdConsentSummary(consentAccepted).shortLabel})
             </button>
           </div>
         </div>
@@ -1259,6 +1250,14 @@ export function ProfileView({
         availableCoins={userCoins}
         initialFilter={historyFilter}
         onClose={() => setHistoryModalOpen(false)}
+        onToast={onToast}
+      />
+
+      <ConsentManagementModal
+        open={consentModalOpen}
+        consentAccepted={consentAccepted}
+        onUpdateConsent={(next) => onUpdateConsent?.(next)}
+        onClose={() => setConsentModalOpen(false)}
         onToast={onToast}
       />
     </div>

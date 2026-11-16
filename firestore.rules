@@ -51,7 +51,8 @@ service cloud.firestore {
         'avatarUrl', 'activeTheme', 'activeBadge',
         'tournamentsJoined', 'matchesPlayed', 'totalWins', 'totalKills',
         'totalPoints', 'coins', 'unlockedCosmetics', 'achievements',
-        'suspended', 'fcmEnabled', 'createdAt', 'updatedAt'
+        'suspended', 'fcmEnabled', 'lastDailyClaimDate', 'lastDailyClaimAt',
+        'dailyClaimStreak', 'createdAt', 'updatedAt'
       ])
       && data.uid is string && data.uid == userId && data.uid.size() <= 128
       && data.username is string && data.username.size() >= 3 && data.username.size() <= 24
@@ -74,6 +75,9 @@ service cloud.firestore {
       && (!('achievements' in data) || (data.achievements is list && data.achievements.size() <= 32))
       && data.suspended is bool
       && (!('fcmEnabled' in data) || data.fcmEnabled is bool)
+      && (!('lastDailyClaimDate' in data) || (data.lastDailyClaimDate is string && data.lastDailyClaimDate.size() == 10 && data.lastDailyClaimDate.matches('^\\d{4}-\\d{2}-\\d{2}$')))
+      && (!('lastDailyClaimAt' in data) || data.lastDailyClaimAt is timestamp)
+      && (!('dailyClaimStreak' in data) || (data.dailyClaimStreak is int && data.dailyClaimStreak >= 0 && data.dailyClaimStreak <= 36500))
       && data.createdAt is timestamp
       && data.updatedAt is timestamp;
     }
@@ -355,6 +359,27 @@ service cloud.firestore {
                 incoming().diff(existing()).affectedKeys().hasOnly(['coins', 'updatedAt'])
                 && incoming().coins >= 0
                 && incoming().coins <= existing().coins - 1000
+              ) ||
+              (
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'coins', 'lastDailyClaimDate', 'lastDailyClaimAt',
+                  'dailyClaimStreak', 'achievements', 'updatedAt'
+                ])
+                && incoming().coins == existing().coins + 10
+                && incoming().lastDailyClaimDate is string
+                && incoming().lastDailyClaimDate.size() == 10
+                && incoming().lastDailyClaimDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
+                && incoming().lastDailyClaimAt == request.time
+                && incoming().dailyClaimStreak is int
+                && incoming().dailyClaimStreak >= 1
+                && incoming().dailyClaimStreak <= 36500
+                && (!('lastDailyClaimDate' in existing()) || incoming().lastDailyClaimDate > existing().lastDailyClaimDate)
+                && (
+                  !('lastDailyClaimAt' in existing()) ||
+                  existing().lastDailyClaimAt.year() != request.time.year() ||
+                  existing().lastDailyClaimAt.month() != request.time.month() ||
+                  existing().lastDailyClaimAt.day() != request.time.day()
+                )
               )
             )
           )
@@ -535,7 +560,13 @@ service cloud.firestore {
                 && incoming().weeklyKills == existing().weeklyKills
                 && incoming().weeklyPoints == existing().weeklyPoints
               ) ||
-              incoming().diff(existing()).affectedKeys().hasOnly(['username', 'avatarUrl', 'updatedAt'])
+              incoming().diff(existing()).affectedKeys().hasOnly(['username', 'avatarUrl', 'updatedAt']) ||
+              (
+                incoming().diff(existing()).affectedKeys().hasOnly(['coins', 'updatedAt'])
+                && incoming().coins == existing().coins + 10
+                && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins == incoming().coins
+                && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.lastDailyClaimAt == request.time
+              )
             )
           )
         );

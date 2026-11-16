@@ -50135,6 +50135,59 @@ function canShowInterstitial(params) {
 	if (lastShownAtMs <= 0) return true;
 	return nowMs - lastShownAtMs >= cooldownMs;
 }
+// src/utils/dailyLogin.ts
+/**
+* Returns the UTC calendar date string (YYYY-MM-DD) matching Firestore server timestamps.
+*/
+function getUtcDateKey(date = /* @__PURE__ */ new Date()) {
+	return date.toISOString().slice(0, 10);
+}
+/**
+* Returns the previous UTC calendar date string (YYYY-MM-DD).
+*/
+function getPreviousUtcDateKey(date = /* @__PURE__ */ new Date()) {
+	return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - 1)).toISOString().slice(0, 10);
+}
+function getDailyLoginStatus(profile, now = /* @__PURE__ */ new Date()) {
+	const todayKey = getUtcDateKey(now);
+	const yesterdayKey = getPreviousUtcDateKey(now);
+	if (!profile) return {
+		todayKey,
+		claimedToday: false,
+		canClaim: false,
+		currentStreak: 0,
+		nextStreak: 1,
+		reason: "Sign in to claim your daily +10 Spider Coins."
+	};
+	const lastDate = profile.lastDailyClaimDate;
+	const rawStreak = typeof profile.dailyClaimStreak === "number" && profile.dailyClaimStreak > 0 ? Math.floor(profile.dailyClaimStreak) : 0;
+	if (lastDate === todayKey) return {
+		todayKey,
+		claimedToday: true,
+		canClaim: false,
+		currentStreak: Math.max(1, rawStreak),
+		nextStreak: Math.max(1, rawStreak),
+		reason: "Already claimed today. Come back tomorrow (UTC) for +10 more coins."
+	};
+	const isConsecutive = lastDate === yesterdayKey;
+	const currentStreak = isConsecutive ? rawStreak : 0;
+	const nextStreak = isConsecutive ? rawStreak + 1 : 1;
+	if (profile.suspended) return {
+		todayKey,
+		claimedToday: false,
+		canClaim: false,
+		currentStreak,
+		nextStreak,
+		reason: "Account suspended — daily rewards are paused."
+	};
+	return {
+		todayKey,
+		claimedToday: false,
+		canClaim: true,
+		currentStreak,
+		nextStreak
+	};
+}
 // src/utils/tournamentRules.ts
 var TOURNAMENT_MODES = {
 	Solo: {
@@ -50432,6 +50485,7 @@ function normalizeUserProfile(uid, data) {
 		coins: typeof data.coins === "number" ? data.coins : 0,
 		unlockedCosmetics: Array.isArray(data.unlockedCosmetics) ? data.unlockedCosmetics : ["theme-obsidian", "badge-web-striker"],
 		achievements: Array.isArray(data.achievements) ? data.achievements : [],
+		...data.lastDailyClaimAt ? { lastDailyClaimAt: toIsoString(data.lastDailyClaimAt) } : {},
 		createdAt: toIsoString(data.createdAt),
 		updatedAt: toIsoString(data.updatedAt)
 	};
@@ -50970,6 +51024,53 @@ async function unlockRewardedAdCosmetic(params) {
 		});
 		return { alreadyUnlocked: false };
 	} catch (error) {
+		handleFirestoreError(error, OperationType.UPDATE, `users/${profile.uid}`);
+	}
+}
+async function claimDailyLoginBonus(profile) {
+	if (!auth.currentUser || !auth.currentUser.emailVerified) throw new Error("Please verify your email address in your Profile before claiming daily login coins.");
+	if (profile.suspended) throw new Error("Suspended accounts cannot claim daily login bonuses.");
+	const userRef = doc(db, "users", profile.uid);
+	const lbRef = doc(db, "leaderboards", profile.uid);
+	try {
+		return await runTransaction(db, async (tx) => {
+			const [userSnap, lbSnap] = await Promise.all([tx.get(userRef), tx.get(lbRef)]);
+			if (!userSnap.exists()) throw new Error("Player profile not found.");
+			const userData = userSnap.data();
+			const status = getDailyLoginStatus({
+				suspended: Boolean(userData.suspended),
+				lastDailyClaimDate: typeof userData.lastDailyClaimDate === "string" ? userData.lastDailyClaimDate : void 0,
+				dailyClaimStreak: typeof userData.dailyClaimStreak === "number" ? userData.dailyClaimStreak : 0
+			});
+			if (!status.canClaim) throw new Error(status.reason || "Daily login bonus already claimed today.");
+			const nextCoins = (typeof userData.coins === "number" ? userData.coins : profile.coins) + 10;
+			const nextAchievements = evaluateUnlockedAchievements({
+				tournamentsJoined: typeof userData.tournamentsJoined === "number" ? userData.tournamentsJoined : profile.tournamentsJoined,
+				totalKills: typeof userData.totalKills === "number" ? userData.totalKills : profile.totalKills,
+				totalWins: typeof userData.totalWins === "number" ? userData.totalWins : profile.totalWins,
+				coins: nextCoins,
+				achievements: Array.isArray(userData.achievements) ? userData.achievements : profile.achievements
+			});
+			tx.update(userRef, {
+				coins: nextCoins,
+				lastDailyClaimDate: status.todayKey,
+				lastDailyClaimAt: serverTimestamp(),
+				dailyClaimStreak: status.nextStreak,
+				achievements: nextAchievements,
+				updatedAt: serverTimestamp()
+			});
+			if (lbSnap.exists()) tx.update(lbRef, {
+				coins: nextCoins,
+				updatedAt: serverTimestamp()
+			});
+			return {
+				coinsAwarded: 10,
+				nextCoins,
+				nextStreak: status.nextStreak
+			};
+		});
+	} catch (error) {
+		if (error instanceof Error && !error.message.toLowerCase().includes("permission")) throw error;
 		handleFirestoreError(error, OperationType.UPDATE, `users/${profile.uid}`);
 	}
 }
@@ -51622,6 +51723,86 @@ async function adminRemoveRegistration(registration, tournament) {
 		handleFirestoreError(error, OperationType.DELETE, `registrations/${registration.id}`);
 	}
 }
+// src/utils/adConsent.ts
+var SPIDER_AD_CONSENT_STORAGE_KEY = "spider_ad_consent";
+var SPIDER_AD_CONSENT_EVENT = "spider-ad-consent-changed";
+function getSafeStorage(storage) {
+	if (storage !== void 0) return storage;
+	if (typeof window === "undefined") return null;
+	try {
+		return window.localStorage;
+	} catch {
+		return null;
+	}
+}
+/**
+* Reads the global `spider_ad_consent` preference.
+* GDPR-safe default: if unset (`null`), defaults to non-personalized ads (`personalizedAdsEnabled: false`).
+*/
+function readGlobalAdConsent(storage) {
+	const target = getSafeStorage(storage);
+	if (!target) return {
+		personalizedAdsEnabled: false,
+		hasExplicitChoice: false,
+		rawValue: null
+	};
+	try {
+		const raw = target.getItem(SPIDER_AD_CONSENT_STORAGE_KEY);
+		if (raw === "1") return {
+			personalizedAdsEnabled: true,
+			hasExplicitChoice: true,
+			rawValue: "1"
+		};
+		if (raw === "0") return {
+			personalizedAdsEnabled: false,
+			hasExplicitChoice: true,
+			rawValue: "0"
+		};
+		return {
+			personalizedAdsEnabled: false,
+			hasExplicitChoice: false,
+			rawValue: null
+		};
+	} catch {
+		return {
+			personalizedAdsEnabled: false,
+			hasExplicitChoice: false,
+			rawValue: null
+		};
+	}
+}
+/**
+* Persists the global `spider_ad_consent` preference (`'1'` or `'0'`) and notifies global listeners.
+*/
+function writeGlobalAdConsent(personalizedAdsEnabled, storage) {
+	const serialized = personalizedAdsEnabled ? "1" : "0";
+	const target = getSafeStorage(storage);
+	if (target) try {
+		target.setItem(SPIDER_AD_CONSENT_STORAGE_KEY, serialized);
+	} catch {}
+	if (typeof window !== "undefined" && typeof CustomEvent !== "undefined") try {
+		window.dispatchEvent(new CustomEvent(SPIDER_AD_CONSENT_EVENT, { detail: { personalizedAdsEnabled } }));
+	} catch {}
+	return serialized;
+}
+function getAdConsentSummary(personalizedAdsEnabled) {
+	if (personalizedAdsEnabled) return {
+		personalizedAdsEnabled: true,
+		optedOut: false,
+		npa: false,
+		shortLabel: "Personalized",
+		modeHeadline: "Personalized Ads Enabled",
+		modeDescription: "Google AdMob may use device advertising IDs and interest signals to serve relevant ads that help keep all tournaments 100% free."
+	};
+	return {
+		personalizedAdsEnabled: false,
+		optedOut: true,
+		npa: true,
+		shortLabel: "Non-Personalized",
+		modeHeadline: "Opted Out · Non-Personalized Ads Only",
+		modeDescription: "Ad personalization is turned off (NPA=1). Ads use only contextual tournament information without behavioral profiling or cross-app tracking."
+	};
+}
 // src/utils/admobHelpers.ts
 var ADMOB_OFFICIAL_TEST_IDS = {
 	publisherId: "pub-3940256099942544",
@@ -52177,6 +52358,44 @@ var FileText = createLucideIcon("file-text", [
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
+var Flame = createLucideIcon("flame", [["path", {
+	d: "M12 3q1 4 4 6.5t3 5.5a1 1 0 0 1-14 0 5 5 0 0 1 1-3 1 1 0 0 0 5 0c0-2-1.5-3-1.5-5q0-2 2.5-4",
+	key: "1slcih"
+}]]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var Gift = createLucideIcon("gift", [
+	["rect", {
+		x: "3",
+		y: "8",
+		width: "18",
+		height: "4",
+		rx: "1",
+		key: "bkv52"
+	}],
+	["path", {
+		d: "M12 8v13",
+		key: "1c76mn"
+	}],
+	["path", {
+		d: "M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7",
+		key: "6wjy6b"
+	}],
+	["path", {
+		d: "M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5",
+		key: "1ihvrl"
+	}]
+]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
 var History = createLucideIcon("history", [
 	["path", {
 		d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8",
@@ -52257,6 +52476,28 @@ var IndianRupee = createLucideIcon("indian-rupee", [
 	["path", {
 		d: "M9 13c6.667 0 6.667-10 0-10",
 		key: "1nkvk2"
+	}]
+]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var Info = createLucideIcon("info", [
+	["circle", {
+		cx: "12",
+		cy: "12",
+		r: "10",
+		key: "1mglay"
+	}],
+	["path", {
+		d: "M12 16v-4",
+		key: "1dtifu"
+	}],
+	["path", {
+		d: "M12 8h.01",
+		key: "e9boi3"
 	}]
 ]);
 /**
@@ -52553,6 +52794,50 @@ var Shield = createLucideIcon("shield", [["path", {
 	d: "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z",
 	key: "oel41y"
 }]]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var SlidersHorizontal = createLucideIcon("sliders-horizontal", [
+	["path", {
+		d: "M10 5H3",
+		key: "1qgfaw"
+	}],
+	["path", {
+		d: "M12 19H3",
+		key: "yhmn1j"
+	}],
+	["path", {
+		d: "M14 3v4",
+		key: "1sua03"
+	}],
+	["path", {
+		d: "M16 17v4",
+		key: "1q0r14"
+	}],
+	["path", {
+		d: "M21 12h-9",
+		key: "1o4lsq"
+	}],
+	["path", {
+		d: "M21 19h-5",
+		key: "1rlt1p"
+	}],
+	["path", {
+		d: "M21 5h-7",
+		key: "1oszz2"
+	}],
+	["path", {
+		d: "M8 10v4",
+		key: "tgpxqk"
+	}],
+	["path", {
+		d: "M8 12H3",
+		key: "a7s4jb"
+	}]
+]);
 /**
 * @license lucide-react v0.546.0 - ISC
 *
@@ -53489,7 +53774,7 @@ var __vitePreload = function preload(baseModule, deps, importerUrl) {
 		return baseModule().catch(handlePreloadError);
 	});
 };
-var AdMob = registerPlugin("AdMob", { web: () => __vitePreload(() => import("./web-JYwvhKeF.js").then((m) => new m.AdMobWeb()), []) });
+var AdMob = registerPlugin("AdMob", { web: () => __vitePreload(() => import("./web-C-XixrI9.js").then((m) => new m.AdMobWeb()), []) });
 // src/lib/admobBridge.ts
 var AD_TIMEOUT_MS = 12e3;
 var STATUS_LISTENERS = /* @__PURE__ */ new Set();
@@ -54156,9 +54441,37 @@ function AdMobBannerSlot({ settings, screen = "home", placementLabel = "Arena Sp
 	});
 }
 // src/components/HomeView.tsx
-function HomeView({ profile, isSignedIn, tournaments, results, announcements, leaderboard, registeredTournamentIds, adminSettings, consentAccepted, onAcceptConsent, onSelectTournament, onNavigateTab, onOpenAuth }) {
+function HomeView({ profile, isSignedIn, isEmailVerified, tournaments, results, announcements, leaderboard, registeredTournamentIds, adminSettings, consentAccepted, onAcceptConsent, onAfterDailyClaim, onSelectTournament, onNavigateTab, onOpenAuth, onToast }) {
 	const [avatarError, setAvatarError] = (0, import_react.useState)(false);
 	const [heroImgError, setHeroImgError] = (0, import_react.useState)(false);
+	const [claimingDaily, setClaimingDaily] = (0, import_react.useState)(false);
+	const [dailyError, setDailyError] = (0, import_react.useState)(null);
+	const dailyStatus = getDailyLoginStatus(profile);
+	const handleClaimDailyBonus = async () => {
+		setDailyError(null);
+		if (!isSignedIn || !profile) {
+			onOpenAuth();
+			return;
+		}
+		if (!isEmailVerified) {
+			onToast("Verify your email address in Profile first to claim daily login coins.");
+			onNavigateTab("profile");
+			return;
+		}
+		if (!dailyStatus.canClaim || claimingDaily) return;
+		setClaimingDaily(true);
+		try {
+			const res = await claimDailyLoginBonus(profile);
+			onToast(`+${res.coinsAwarded} Daily Login Spider Coins claimed! Streak: ${res.nextStreak} day${res.nextStreak === 1 ? "" : "s"}.`);
+			onAfterDailyClaim?.();
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Unable to claim daily login bonus right now.";
+			setDailyError(message);
+			onToast(message);
+		} finally {
+			setClaimingDaily(false);
+		}
+	};
 	const featured = tournaments.find((t) => t.featured && t.status !== "cancelled") || tournaments.find((t) => t.status === "upcoming") || tournaments[0];
 	(0, import_react.useEffect)(() => {
 		setHeroImgError(false);
@@ -54237,6 +54550,61 @@ function HomeView({ profile, isSignedIn, tournaments, results, announcements, le
 							})] })
 						]
 					})
+				})]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+				"aria-label": "Daily Login Bonus",
+				"data-testid": "daily-login-card",
+				className: "rounded-xl border border-amber-500/25 bg-[#121216] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex items-start sm:items-center gap-3.5",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "w-11 h-11 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Gift, { className: "w-5 h-5 text-amber-400" })
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "space-y-1",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "flex flex-wrap items-center gap-2",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
+									className: "font-display text-lg font-bold text-white",
+									children: [
+										"Daily Login Reward: +",
+										10,
+										" Spider Coins"
+									]
+								}), isSignedIn && dailyStatus.currentStreak > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+									className: "inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-300 tabular-nums",
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Flame, { className: "w-3 h-3" }),
+										dailyStatus.currentStreak,
+										"d Streak"
+									]
+								})]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								className: "text-xs text-zinc-400",
+								children: !isSignedIn ? "Sign in to claim +10 free Spider Coins every day toward ₹10 UPI/Bank withdrawals (1,000 Coins = ₹10)." : dailyStatus.claimedToday ? `Claimed today (${dailyStatus.todayKey} UTC). Come back tomorrow for +10 more Spider Coins.` : dailyStatus.reason || "Tap Claim to collect your daily +10 Spider Coins instantly."
+							}),
+							dailyError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								role: "alert",
+								className: "text-xs text-[#FB7185] font-medium",
+								children: dailyError
+							})
+						]
+					})]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+					type: "button",
+					"data-testid": "daily-login-claim-btn",
+					disabled: claimingDaily || isSignedIn && isEmailVerified && !dailyStatus.canClaim,
+					onClick: () => void handleClaimDailyBonus(),
+					className: `min-h-[44px] px-5 py-2.5 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-2 shrink-0 transition-colors ${!isSignedIn || !isEmailVerified ? "bg-[#E11D48] hover:bg-[#F43F5E] text-white" : dailyStatus.claimedToday ? "bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 cursor-default" : dailyStatus.canClaim ? "bg-amber-500 hover:bg-amber-400 text-black" : "bg-zinc-800 text-zinc-400 cursor-not-allowed"}`,
+					children: dailyStatus.claimedToday ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleCheck, { className: "w-4 h-4 text-emerald-400" }),
+						"Claimed Today (+",
+						10,
+						")"
+					] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Coins, { className: "w-4 h-4" }), !isSignedIn ? `Sign In · Claim +10` : !isEmailVerified ? "Verify Email to Claim" : claimingDaily ? "Claiming..." : `Claim Daily +10 Coins`] })
 				})]
 			}),
 			featured && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("section", {
@@ -55678,6 +56046,229 @@ function formatWithdrawalTimestamp(iso) {
 		minute: "2-digit"
 	});
 }
+// src/components/ConsentManagementModal.tsx
+function ConsentManagementModal({ open, consentAccepted, onUpdateConsent, onClose, onToast }) {
+	const [openingUmp, setOpeningUmp] = (0, import_react.useState)(false);
+	const [statusNotice, setStatusNotice] = (0, import_react.useState)(null);
+	(0, import_react.useEffect)(() => {
+		if (!open) {
+			setStatusNotice(null);
+			return;
+		}
+		const handleKeyDown = (e) => {
+			if (e.key === "Escape") onClose();
+		};
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [open, onClose]);
+	if (!open) return null;
+	const isNative = Capacitor.isNativePlatform();
+	const optedOut = !consentAccepted;
+	const summary = getAdConsentSummary(consentAccepted);
+	const handleToggleOptOut = () => {
+		const nextOptedOut = !optedOut;
+		onUpdateConsent(!nextOptedOut);
+		const msg = nextOptedOut ? "Opted out globally — only non-personalized ads will be requested." : "Personalized ad consent saved globally.";
+		setStatusNotice(msg);
+		onToast?.(msg);
+	};
+	const handleOpenNativeUmp = async () => {
+		setOpeningUmp(true);
+		try {
+			if (await openAdPrivacyOptions() === "native_opened") {
+				const msg = "Google UMP privacy options updated.";
+				setStatusNotice(msg);
+				onToast?.(msg);
+			}
+		} finally {
+			setOpeningUmp(false);
+		}
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: "fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4",
+		role: "dialog",
+		"aria-modal": "true",
+		"aria-labelledby": "gdpr-consent-modal-title",
+		onClick: (e) => {
+			if (e.target === e.currentTarget) onClose();
+		},
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			className: "w-full max-w-xl max-h-[90vh] flex flex-col rounded-2xl border border-white/10 bg-[#121216] shadow-2xl overflow-hidden",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex items-start justify-between gap-4 px-5 sm:px-6 py-4 border-b border-white/10 shrink-0",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "space-y-1",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
+							id: "gdpr-consent-modal-title",
+							className: "font-display text-2xl font-extrabold text-white flex items-center gap-2",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { className: "w-5 h-5 text-[#E11D48]" }), "GDPR Consent & Ad Privacy"]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: "text-xs text-zinc-400",
+							children: "Control ad personalization across SPIDER ESPORTS. Your choice applies globally."
+						})]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						onClick: onClose,
+						"aria-label": "Close ad privacy consent modal",
+						className: "min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg border border-white/10 text-zinc-300 hover:text-white hover:bg-white/5 shrink-0",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { className: "w-5 h-5" })
+					})]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex-1 overflow-y-auto px-5 sm:px-6 py-5 space-y-4",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							"data-testid": "consent-status-banner",
+							className: `rounded-xl border p-4 space-y-1.5 ${optedOut ? "border-emerald-500/35 bg-emerald-950/15" : "border-amber-500/30 bg-amber-950/15"}`,
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "flex items-center justify-between gap-2",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: "text-xs font-semibold text-white",
+									children: summary.modeHeadline
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: `text-[11px] font-semibold px-2 py-0.5 rounded border ${optedOut ? "border-emerald-500/35 bg-emerald-500/15 text-emerald-300" : "border-amber-500/35 bg-amber-500/15 text-amber-300"}`,
+									children: summary.shortLabel
+								})]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								className: "text-xs text-zinc-300 leading-relaxed",
+								children: summary.modeDescription
+							})]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "rounded-xl border border-white/15 bg-[#09090B] p-4 flex items-center justify-between gap-4",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "space-y-1",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+									htmlFor: "gdpr-opt-out-switch",
+									className: "text-sm font-semibold text-white block cursor-pointer",
+									children: "Opt out of personalized ads"
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+									className: "text-xs text-zinc-400 leading-relaxed",
+									children: [
+										"Turn ON to opt out of behavioral ad targeting and restrict Google AdMob requests to non-personalized contextual ads (",
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "font-mono-tabular text-zinc-300",
+											children: "npa=1"
+										}),
+										")."
+									]
+								})]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								id: "gdpr-opt-out-switch",
+								type: "button",
+								role: "switch",
+								"aria-checked": optedOut,
+								"aria-label": "Opt out of personalized ads",
+								"data-testid": "gdpr-opt-out-toggle",
+								onClick: handleToggleOptOut,
+								className: `relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#E11D48] ${optedOut ? "border-emerald-400/50 bg-emerald-500" : "border-white/20 bg-zinc-700"}`,
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${optedOut ? "translate-x-6" : "translate-x-1"}` })
+							})]
+						}),
+						statusNotice && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							role: "status",
+							className: "rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-200 flex items-center gap-2",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleCheck, { className: "w-4 h-4 text-emerald-400 shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: statusNotice })]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "rounded-xl border border-white/10 bg-[#09090B] p-4 space-y-3 text-xs text-zinc-300 leading-relaxed",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h3", {
+								className: "text-sm font-semibold text-white flex items-center gap-2",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Info, { className: "w-4 h-4 text-[#E11D48] shrink-0" }), "How Ad Personalization & GDPR Consent Work"]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "space-y-2.5",
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+										className: "font-semibold text-zinc-100",
+										children: "1. Personalized Ads (When Opt-Out is OFF)"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+										className: "text-zinc-400 mt-0.5",
+										children: "With your consent, Google AdMob and its mediation partners may access your device Advertising ID, approximate region, and in-app interaction signals to tailor ads to your interests."
+									})] }),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+										className: "font-semibold text-zinc-100",
+										children: "2. Non-Personalized Ads (When Opt-Out is ON)"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+										className: "text-zinc-400 mt-0.5",
+										children: [
+											"When you opt out, SPIDER ESPORTS sends the non-personalized flag (",
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+												className: "font-mono-tabular text-zinc-300",
+												children: "npa=1"
+											}),
+											") on every Android AdMob request and pauses personalized cookies/profiling signals. Ads rely strictly on coarse contextual information (such as app category and current screen)."
+										]
+									})] }),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+										className: "font-semibold text-zinc-100",
+										children: "3. Your GDPR & Privacy Rights"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+										className: "text-zinc-400 mt-0.5",
+										children: [
+											"Under GDPR (EEA/UK) and applicable data protection laws, consent is optional and may be withdrawn at any time from your Profile. Opting out never blocks free tournament entry, match slots, or Spider Coin withdrawals. Preference is saved globally under ",
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+												className: "font-mono-tabular text-zinc-300",
+												children: SPIDER_AD_CONSENT_STORAGE_KEY
+											}),
+											"."
+										]
+									})] })
+								]
+							})]
+						}),
+						isNative && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "rounded-xl border border-white/10 bg-[#09090B] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "space-y-0.5",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+									className: "text-xs font-semibold text-white flex items-center gap-1.5",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SlidersHorizontal, { className: "w-3.5 h-3.5 text-[#E11D48]" }), "Google UMP Regional Consent Form"]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "text-[11px] text-zinc-400",
+									children: "Manage vendor-level EEA/UK IAB TCF choices directly inside Google UMP."
+								})]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								disabled: openingUmp,
+								onClick: () => void handleOpenNativeUmp(),
+								className: "min-h-[38px] px-3.5 py-1.5 rounded-lg border border-white/15 bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-white shrink-0",
+								children: openingUmp ? "Opening UMP..." : "Manage UMP Vendors"
+							})]
+						})
+					]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 sm:px-6 py-3.5 border-t border-white/10 bg-[#09090B]/60 shrink-0",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+						className: "text-[11px] text-zinc-400 inline-flex items-center gap-1.5",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Lock, { className: "w-3.5 h-3.5 text-zinc-500 shrink-0" }),
+							"Saved globally as ",
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "font-mono-tabular text-zinc-300",
+								children: consentAccepted ? "1 (Personalized)" : "0 (Opted Out)"
+							})
+						]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flex items-center gap-2 shrink-0",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							onClick: handleToggleOptOut,
+							className: "min-h-[40px] px-3.5 py-1.5 rounded-lg border border-white/15 bg-zinc-900 hover:bg-zinc-800 text-xs font-semibold text-zinc-200",
+							children: optedOut ? "Switch to Personalized" : "Opt Out Now"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							onClick: onClose,
+							className: "min-h-[40px] px-5 py-1.5 rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] text-xs font-semibold text-white",
+							children: "Done"
+						})]
+					})]
+				})
+			]
+		})
+	});
+}
 // src/components/WithdrawalHistoryModal.tsx
 function WithdrawalHistoryModal({ open, withdrawals, availableCoins, initialFilter = "all", onClose, onToast }) {
 	const [statusFilter, setStatusFilter] = (0, import_react.useState)(initialFilter);
@@ -56021,7 +56612,7 @@ function WithdrawalHistoryModal({ open, withdrawals, availableCoins, initialFilt
 	});
 }
 // src/components/ProfileView.tsx
-function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInProvider, registrations, withdrawals, tournaments, results, leaderboard, adminSettings, consentAccepted = true, onUpdateConsent, onOpenAuth, onNavigateResults, onSelectTournament, onToast, onRefreshVerification }) {
+function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInProvider, registrations, withdrawals, tournaments, results, leaderboard, adminSettings, consentAccepted = false, onUpdateConsent, onOpenAuth, onNavigateResults, onSelectTournament, onToast, onRefreshVerification }) {
 	const [ignEdit, setIgnEdit] = (0, import_react.useState)(profile?.freeFireIgn || "");
 	const [uidEdit, setUidEdit] = (0, import_react.useState)(profile?.freeFireUid || "");
 	const [editingIdentity, setEditingIdentity] = (0, import_react.useState)(false);
@@ -56042,6 +56633,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 	const [submittingWithdraw, setSubmittingWithdraw] = (0, import_react.useState)(false);
 	const [historyModalOpen, setHistoryModalOpen] = (0, import_react.useState)(false);
 	const [historyFilter, setHistoryFilter] = (0, import_react.useState)("all");
+	const [consentModalOpen, setConsentModalOpen] = (0, import_react.useState)(false);
 	const openHistoryModal = (filter = "all") => {
 		setHistoryFilter(filter);
 		setHistoryModalOpen(true);
@@ -57079,19 +57671,13 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 									type: "button",
-									onClick: async () => {
-										if (await openAdPrivacyOptions() === "native_opened") onToast("Google UMP Ad Privacy options updated.");
-										else {
-											const next = !consentAccepted;
-											onUpdateConsent?.(next);
-											onToast(next ? "Personalized AdMob preference enabled." : "Switched to Non-Personalized AdMob preference.");
-										}
-									},
-									className: "min-h-[36px] px-3 py-1.5 rounded-lg border border-white/10 text-xs text-zinc-300 hover:text-white inline-flex items-center gap-1.5",
+									"data-testid": "open-gdpr-consent-btn",
+									onClick: () => setConsentModalOpen(true),
+									className: "min-h-[36px] px-3 py-1.5 rounded-lg border border-[#E11D48]/35 bg-[#E11D48]/10 text-xs font-medium text-white hover:bg-[#E11D48]/20 inline-flex items-center gap-1.5",
 									children: [
 										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { className: "w-3.5 h-3.5 text-[#E11D48]" }),
-										"Ad Privacy (",
-										consentAccepted ? "Standard" : "Non-Personalized",
+										"Ad Privacy & GDPR Consent (",
+										getAdConsentSummary(consentAccepted).shortLabel,
 										")"
 									]
 								})
@@ -57147,6 +57733,13 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 				availableCoins: userCoins,
 				initialFilter: historyFilter,
 				onClose: () => setHistoryModalOpen(false),
+				onToast
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ConsentManagementModal, {
+				open: consentModalOpen,
+				consentAccepted,
+				onUpdateConsent: (next) => onUpdateConsent?.(next),
+				onClose: () => setConsentModalOpen(false),
 				onToast
 			})
 		]
@@ -59554,7 +60147,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 	});
 }
 // src/components/MatchDetailsModal.tsx
-function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn, isEmailVerified, isAdmin, onClose, onRequireAuth, onSuccessToast }) {
+function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn, isEmailVerified, isAdmin, adminSettings, consentAccepted, onAfterJoinConfirmation, onClose, onRequireAuth, onSuccessToast }) {
 	const [registrations, setRegistrations] = (0, import_react.useState)([]);
 	const [freeFireIgn, setFreeFireIgn] = (0, import_react.useState)("");
 	const [freeFireUid, setFreeFireUid] = (0, import_react.useState)("");
@@ -59587,8 +60180,14 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 		const unsub = subscribeTournamentRegistrations(tournament.id, (items) => {
 			setRegistrations(items);
 		});
+		preloadInterstitialAd(adminSettings, consentAccepted);
 		return () => unsub();
-	}, [tournament?.id, profile]);
+	}, [
+		tournament?.id,
+		profile,
+		adminSettings,
+		consentAccepted
+	]);
 	const myRegistration = profile ? registrations.find((r) => r.userId === profile.uid && r.status === "confirmed") : void 0;
 	(0, import_react.useEffect)(() => {
 		if (myRegistration && justJoined?.tournamentId === myRegistration.tournamentId) setJustJoined(null);
@@ -59682,6 +60281,7 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 				teamName: modeDef.requiredTeammates > 0 && teamName.trim() ? teamName.trim() : void 0
 			});
 			onSuccessToast(`Joined ${tournament.title}! Slot #${res.slotNumber} confirmed.`);
+			onAfterJoinConfirmation?.();
 		} catch (err) {
 			setFormError(err instanceof Error ? err.message : "Unable to complete registration.");
 		} finally {
@@ -60132,6 +60732,12 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 							})]
 						}, reg.id))
 					})]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AdMobBannerSlot, {
+					settings: adminSettings,
+					screen: "matches",
+					placementLabel: "Match Join & Details Sponsor",
+					consentAccepted
 				})
 			]
 		})
@@ -60549,13 +61155,7 @@ function App() {
 	const [authModalOpen, setAuthModalOpen] = (0, import_react.useState)(false);
 	const [notificationsOpen, setNotificationsOpen] = (0, import_react.useState)(false);
 	const [toast, setToast] = (0, import_react.useState)(null);
-	const [consentAccepted, setConsentAccepted] = (0, import_react.useState)(() => {
-		try {
-			return localStorage.getItem("spider_ad_consent") === "1";
-		} catch {
-			return false;
-		}
-	});
+	const [consentAccepted, setConsentAccepted] = (0, import_react.useState)(() => readGlobalAdConsent().personalizedAdsEnabled);
 	const [lastInterstitialAt, setLastInterstitialAt] = (0, import_react.useState)(0);
 	const showToast = (msg) => {
 		setToast(msg);
@@ -60695,10 +61295,22 @@ function App() {
 	consentRef.current = consentAccepted;
 	const updateConsentPreference = (accepted) => {
 		setConsentAccepted(accepted);
-		try {
-			localStorage.setItem("spider_ad_consent", accepted ? "1" : "0");
-		} catch {}
+		writeGlobalAdConsent(accepted);
 	};
+	(0, import_react.useEffect)(() => {
+		const handleStorageSync = (e) => {
+			if (e.key === "spider_ad_consent") setConsentAccepted(readGlobalAdConsent().personalizedAdsEnabled);
+		};
+		const handleCustomSync = () => {
+			setConsentAccepted(readGlobalAdConsent().personalizedAdsEnabled);
+		};
+		window.addEventListener("storage", handleStorageSync);
+		window.addEventListener(SPIDER_AD_CONSENT_EVENT, handleCustomSync);
+		return () => {
+			window.removeEventListener("storage", handleStorageSync);
+			window.removeEventListener(SPIDER_AD_CONSENT_EVENT, handleCustomSync);
+		};
+	}, []);
 	(0, import_react.useEffect)(() => {
 		initializeAdMobRuntime(adminSettings, consentAccepted).then(() => syncBannerForScreen(adminSettings, activeTab, consentAccepted));
 	}, [adminSettings, consentAccepted]);
@@ -60716,20 +61328,20 @@ function App() {
 			getConsent: () => consentRef.current
 		});
 	}, []);
-	const maybeShowNaturalBreakInterstitial = (isSafeContext) => {
+	const maybeShowNaturalBreakInterstitial = (isSafeContext, isCompletedAction = false) => {
 		if (!Capacitor.isNativePlatform()) return;
 		if (!isSafeContext || authModalOpen || Boolean(needsOnboardingUser)) return;
 		const effectiveConfig = resolveEffectiveAdMobConfig(adminSettings, { forceTestMode: Boolean(false) });
 		if (!effectiveConfig.interstitialAdsEnabled) return;
 		const cooldownMs = Math.max(9e4, effectiveConfig.interstitialCooldownMs);
-		if (lastInterstitialAt === 0) {
+		if (!isCompletedAction && lastInterstitialAt === 0) {
 			setLastInterstitialAt(Date.now());
 			return;
 		}
 		if (canShowInterstitial({
 			lastShownAtMs: lastInterstitialAt,
 			cooldownMs,
-			isLiveMatchOrJoining: Boolean(selectedTournament && selectedTournament.status !== "completed") || authModalOpen || Boolean(needsOnboardingUser)
+			isLiveMatchOrJoining: !isCompletedAction && Boolean(selectedTournament && selectedTournament.status !== "completed") || authModalOpen || Boolean(needsOnboardingUser)
 		})) showNativeInterstitialAd(adminSettings, consentAccepted).then((displayed) => {
 			if (displayed) setLastInterstitialAt(Date.now());
 		}).catch(() => void 0);
@@ -60830,6 +61442,7 @@ function App() {
 					activeTab === "home" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(HomeView, {
 						profile,
 						isSignedIn: Boolean(authUser),
+						isEmailVerified: Boolean(authUser?.emailVerified),
 						tournaments: displayTournaments,
 						results: displayResults,
 						announcements: displayAnnouncements,
@@ -60837,15 +61450,12 @@ function App() {
 						registeredTournamentIds,
 						adminSettings,
 						consentAccepted,
-						onAcceptConsent: () => {
-							setConsentAccepted(true);
-							try {
-								localStorage.setItem("spider_ad_consent", "1");
-							} catch {}
-						},
+						onAcceptConsent: () => updateConsentPreference(true),
+						onAfterDailyClaim: () => maybeShowNaturalBreakInterstitial(true, true),
 						onSelectTournament: (t) => setSelectedTournamentId(t.id),
 						onNavigateTab: handleSelectTab,
-						onOpenAuth: () => setAuthModalOpen(true)
+						onOpenAuth: () => setAuthModalOpen(true),
+						onToast: showToast
 					}),
 					activeTab === "matches" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MatchesView, {
 						tournaments: displayTournaments,
@@ -60927,6 +61537,9 @@ function App() {
 				isSignedIn: Boolean(authUser),
 				isEmailVerified: Boolean(authUser?.emailVerified),
 				isAdmin,
+				adminSettings,
+				consentAccepted,
+				onAfterJoinConfirmation: () => maybeShowNaturalBreakInterstitial(true, true),
 				onClose: () => {
 					const closingCompletedMatch = selectedTournament?.status === "completed";
 					setSelectedTournamentId(null);

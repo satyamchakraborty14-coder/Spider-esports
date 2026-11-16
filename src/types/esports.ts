@@ -123,6 +123,9 @@ export interface UserProfile {
   achievements: string[];
   suspended: boolean;
   fcmEnabled: boolean;
+  lastDailyClaimDate?: string;
+  lastDailyClaimAt?: string;
+  dailyClaimStreak?: number;
   createdAt: string;
   updatedAt: string;
 }

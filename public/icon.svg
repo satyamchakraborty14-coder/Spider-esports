@@ -1,16 +1,170 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#09090B" />
-  <circle cx="256" cy="256" r="184" fill="none" stroke="#E11D48" stroke-width="18" />
-  <path
-    d="M256 124c38 0 68 30 68 68v24c28 16 46 46 46 80 0 52-42 94-94 94h-40c-52 0-94-42-94-94 0-34 18-64 46-80v-24c0-38 30-68 68-68z"
-    fill="#F4F4F5"
-  />
-  <path
-    d="M174 222l-54-36m50 74l-64 8m78 44l-46 52m200-142l54-36m-50 74l64 8m-78 44l46 52"
-    stroke="#E11D48"
-    stroke-width="18"
-    stroke-linecap="round"
-  />
-  <circle cx="232" cy="204" r="10" fill="#E11D48" />
-  <circle cx="280" cy="204" r="10" fill="#E11D48" />
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+      <defs>
+        <radialGradient id="ffBg1" cx="48%" cy="36%" r="68%">
+          <stop offset="0%" stop-color="#6B0F2B" />
+          <stop offset="44%" stop-color="#220A14" />
+          <stop offset="100%" stop-color="#08080B" />
+        </radialGradient>
+        <linearGradient id="ffCrestRim" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#FECDD3" />
+          <stop offset="28%" stop-color="#F43F5E" />
+          <stop offset="72%" stop-color="#BE123C" />
+          <stop offset="100%" stop-color="#4C0519" />
+        </linearGradient>
+        <linearGradient id="ffHood" x1="15%" y1="0%" x2="85%" y2="100%">
+          <stop offset="0%" stop-color="#3E4254" />
+          <stop offset="45%" stop-color="#1E202B" />
+          <stop offset="100%" stop-color="#0A0B10" />
+        </linearGradient>
+        <linearGradient id="ffSkin" x1="15%" y1="10%" x2="90%" y2="95%">
+          <stop offset="0%" stop-color="#F5CAA6" />
+          <stop offset="52%" stop-color="#D79972" />
+          <stop offset="100%" stop-color="#8A5137" />
+        </linearGradient>
+        <linearGradient id="ffMask" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#2F3342" />
+          <stop offset="55%" stop-color="#15161F" />
+          <stop offset="100%" stop-color="#07080B" />
+        </linearGradient>
+        <linearGradient id="ffHair" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#45495C" />
+          <stop offset="50%" stop-color="#1A1C26" />
+          <stop offset="100%" stop-color="#090A0E" />
+        </linearGradient>
+        <linearGradient id="ffJacket" x1="10%" y1="0%" x2="90%" y2="100%">
+          <stop offset="0%" stop-color="#2F3242" />
+          <stop offset="50%" stop-color="#161822" />
+          <stop offset="100%" stop-color="#090A0E" />
+        </linearGradient>
+        <linearGradient id="ffVisor" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#FF5C7A" stop-opacity="0.88" />
+          <stop offset="48%" stop-color="#E11D48" stop-opacity="0.82" />
+          <stop offset="100%" stop-color="#4C0519" stop-opacity="0.94" />
+        </linearGradient>
+        <filter id="ffGlow" x="-25%" y="-25%" width="150%" height="150%">
+          <feGaussianBlur stdDeviation="10" result="b" />
+          <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+        <clipPath id="ffShieldClip">
+          <path d="M56 38 H456 L478 62 V314 C478 346 462 374 436 394 L334 464 C304 484 276 492 256 494 C236 492 208 484 178 464 L76 394 C50 374 34 346 34 314 V62 Z" />
+        </clipPath>
+      </defs>
+
+      <rect width="512" height="512" fill="#09090B" />
+
+      <g clip-path="url(#ffShieldClip)">
+        <rect width="512" height="512" fill="url(#ffBg1)" />
+        <g stroke="#F43F5E" stroke-opacity="0.16" stroke-width="2">
+          <line x1="20" y1="120" x2="170" y2="55" />
+          <line x1="15" y1="185" x2="140" y2="132" />
+          <line x1="492" y1="120" x2="342" y2="55" />
+          <line x1="497" y1="185" x2="372" y2="132" />
+        </g>
+        <circle cx="256" cy="205" r="145" fill="#E11D48" fill-opacity="0.24" filter="url(#ffGlow)" />
+
+        <!-- Shoulders & Layered Tactical Hoodie/Jacket -->
+        <path d="M18 512 C32 414 78 348 156 318 L244 294 L348 312 C428 338 474 402 496 512 Z" fill="url(#ffJacket)" stroke="#050507" stroke-width="3.5" />
+        <path d="M44 434 C66 376 106 338 156 320 L194 352 C156 382 132 418 118 462 L38 474 Z" fill="#202230" stroke="#050507" stroke-width="3" />
+        <path d="M58 400 C84 360 118 338 156 324 L172 338 C138 356 108 384 86 418 Z" fill="url(#ffCrestRim)" />
+        <path d="M468 430 C446 372 406 334 356 316 L318 348 C356 378 380 414 394 458 L474 470 Z" fill="#171822" stroke="#050507" stroke-width="3" />
+        <path d="M454 396 C428 356 394 334 356 320 L340 334 C374 352 404 380 426 414 Z" fill="#E11D48" />
+
+        <!-- High Collar -->
+        <path d="M142 334 C144 282 162 246 186 232 L232 308 L216 390 L138 372 Z" fill="#252836" stroke="#050507" stroke-width="3.5" stroke-linejoin="round" />
+        <path d="M372 326 C370 274 352 242 328 228 L294 304 L308 386 L378 368 Z" fill="#171822" stroke="#050507" stroke-width="3.5" stroke-linejoin="round" />
+        <path d="M186 236 L228 308 L218 326 L176 262 Z" fill="#F43F5E" />
+        <path d="M328 232 L296 304 L304 322 L336 256 Z" fill="#BE123C" />
+
+        <!-- Chest Undershirt + Cross Harness + Spider Emblem -->
+        <path d="M210 340 L264 366 L314 338 L314 512 H208 Z" fill="#0F1016" stroke="#050507" stroke-width="3" />
+        <path d="M158 340 L232 486 L204 500 L134 360 Z" fill="#252736" stroke="#050507" stroke-width="3" />
+        <path d="M362 336 L298 486 L326 500 L388 356 Z" fill="#191B25" stroke="#050507" stroke-width="3" />
+        <g transform="translate(262 426)" filter="url(#ffGlow)">
+          <polygon points="0,-24 9,-10 0,3 -9,-10" fill="url(#ffCrestRim)" />
+          <polygon points="0,7 12,21 0,43 -12,21" fill="url(#ffCrestRim)" />
+          <path d="M-8,-8 L-26,-23 L-35,-5 L-17,4 M8,-8 L26,-23 L35,-5 L17,4 M-9,8 L-32,12 L-28,33 M9,8 L32,12 L28,33" fill="none" stroke="#F43F5E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+        </g>
+
+        <!-- Sculpted Tactical Hood -->
+        <path
+          d="M140 318 C118 242 126 130 176 74 C208 38 246 30 278 36 C318 44 352 78 372 132 C392 186 388 264 366 320 C346 302 328 292 310 290 L264 326 L196 290 C174 294 156 304 140 318 Z"
+          fill="url(#ffHood)"
+          stroke="#050507"
+          stroke-width="4"
+          stroke-linejoin="round"
+        />
+        <path d="M278 38 C316 46 350 80 370 134 C388 186 384 260 364 316 L320 288 C346 210 344 126 306 78 C292 60 276 48 260 44 Z" fill="#0B0C11" fill-opacity="0.58" />
+        <path d="M150 264 C132 188 148 106 192 64 C218 40 248 36 276 40" fill="none" stroke="#FDA4AF" stroke-width="3" stroke-linecap="round" stroke-opacity="0.85" />
+        <path d="M174 282 C154 212 162 122 204 82 C226 60 256 56 282 64 C324 78 352 138 344 276 L264 318 Z" fill="#090A0F" stroke="#E11D48" stroke-width="2.5" />
+
+        <!-- Neck -->
+        <path d="M214 274 L302 270 L312 346 L262 374 L208 344 Z" fill="#9A5F42" stroke="#050507" stroke-width="3.5" />
+        <path d="M218 278 L298 274 L274 334 L244 336 Z" fill="#5D3321" fill-opacity="0.72" />
+
+        <!-- Character Head -->
+        <path
+          d="M188 158 C188 106 220 80 264 80 C306 80 338 106 340 154 C342 194 334 226 318 258 C302 280 282 292 266 296 C244 292 218 276 202 248 C190 220 188 190 188 158 Z"
+          fill="url(#ffSkin)"
+          stroke="#050507"
+          stroke-width="3.5"
+        />
+        <path d="M282 86 C318 96 338 122 338 156 C338 194 330 226 316 256 C300 278 282 290 266 294 C284 268 294 228 294 176 C294 134 288 106 282 86 Z" fill="#703923" fill-opacity="0.28" />
+
+        <!-- Sharp Determined Narrowed Hunter Eyes -->
+        <path d="M204 152 C224 154 244 160 258 170 L262 158 C246 148 224 142 204 142 Z" fill="#0B0B10" />
+        <path d="M326 150 C312 152 296 158 282 168 L278 156 C294 146 310 140 326 140 Z" fill="#0B0B10" />
+        <!-- Crisp narrowed glowing eye slits behind tinted visor -->
+        <polygon points="210,174 248,180 242,188 214,185" fill="#FFF1F2" />
+        <polygon points="318,174 284,180 290,188 314,185" fill="#FFF1F2" />
+
+        <!-- Sleek Tinted Wrap-Around Crimson Combat Shades -->
+        <path
+          d="M192 164 C216 156 244 160 268 172 C288 160 314 156 336 162 L334 196 C318 208 294 210 274 198 L266 190 L256 198 C234 212 206 210 194 196 Z"
+          fill="url(#ffVisor)"
+          fill-opacity="0.72"
+          stroke="#111218"
+          stroke-width="4"
+          stroke-linejoin="round"
+        />
+        <polygon points="200,166 218,164 206,198 195,192" fill="#FFFFFF" fill-opacity="0.54" />
+        <polygon points="292,165 306,163 294,198 284,196" fill="#FFFFFF" fill-opacity="0.38" />
+
+        <!-- Sculpted Tactical Respirator Mask -->
+        <path
+          d="M194 204 C218 218 242 222 268 210 C292 220 316 216 334 202 L326 254 C310 282 288 298 266 306 C238 298 214 282 200 256 Z"
+          fill="url(#ffMask)"
+          stroke="#050507"
+          stroke-width="3.5"
+          stroke-linejoin="round"
+        />
+        <path d="M268 212 L288 224 L282 296 L266 304 L246 296 L244 224 Z" fill="#232533" />
+        <path d="M198 208 C220 220 242 224 264 214" fill="none" stroke="#FB7185" stroke-width="2" stroke-opacity="0.7" />
+        <path d="M214 244 L240 258 L236 272 L212 256 Z" fill="#E11D48" />
+        <path d="M316 242 L292 256 L296 270 L318 254 Z" fill="#BE123C" />
+        <polygon points="266,232 272,254 266,282 260,254" fill="#F43F5E" />
+
+        <!-- Sweeping Layered Hair Bangs -->
+        <path
+          d="M178 158 C174 106 210 68 264 68 C316 68 348 104 344 154 C336 138 328 128 320 156 C312 132 302 118 290 112 C286 138 278 158 266 172 C262 142 254 122 244 114 C234 138 224 156 212 168 C206 142 200 128 192 122 C186 138 182 148 178 158 Z"
+          fill="url(#ffHair)"
+          stroke="#050507"
+          stroke-width="3.5"
+          stroke-linejoin="round"
+        />
+        <path d="M242 84 C230 110 222 136 216 162 C228 144 240 120 248 94 Z" fill="#F43F5E" />
+        <path d="M286 84 C296 104 304 124 310 146 C300 128 292 108 282 92 Z" fill="#FB7185" fill-opacity="0.78" />
+      </g>
+
+      <path
+        d="M56 38 H456 L478 62 V314 C478 346 462 374 436 394 L334 464 C304 484 276 492 256 494 C236 492 208 484 178 464 L76 394 C50 374 34 346 34 314 V62 Z"
+        fill="none"
+        stroke="#050507"
+        stroke-width="9"
+      />
+      <path
+        d="M56 38 H456 L478 62 V314 C478 346 462 374 436 394 L334 464 C304 484 276 492 256 494 C236 492 208 484 178 464 L76 394 C50 374 34 346 34 314 V62 Z"
+        fill="none"
+        stroke="url(#ffCrestRim)"
+        stroke-width="4"
+      />
+    </svg>

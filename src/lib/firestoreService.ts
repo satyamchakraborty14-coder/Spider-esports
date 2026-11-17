@@ -72,7 +72,6 @@ import {
   validateAdminCoinAdjustment,
   validateWithdrawalRequest,
 } from '../utils/coinSystem';
-import { DAILY_LOGIN_COINS, getDailyLoginStatus } from '../utils/dailyLogin';
 import {
   isStrictSoleAdminEmail,
   isStrictSoleAdminSession,
@@ -957,88 +956,7 @@ export async function unlockRewardedAdCosmetic(params: {
   }
 }
 
-// Daily Login Check-In (+10 Spider Coins once per UTC day; strictly independent of ad clicks)
-export async function claimDailyLoginBonus(profile: UserProfile): Promise<{
-  coinsAwarded: number;
-  nextCoins: number;
-  nextStreak: number;
-}> {
-  if (!auth.currentUser || !auth.currentUser.emailVerified) {
-    throw new Error('Please verify your email address in your Profile before claiming daily login coins.');
-  }
-  if (profile.suspended) {
-    throw new Error('Suspended accounts cannot claim daily login bonuses.');
-  }
-
-  const userRef = doc(db, 'users', profile.uid);
-  const lbRef = doc(db, 'leaderboards', profile.uid);
-
-  try {
-    return await runTransaction(db, async (tx) => {
-      const [userSnap, lbSnap] = await Promise.all([tx.get(userRef), tx.get(lbRef)]);
-      if (!userSnap.exists()) {
-        throw new Error('Player profile not found.');
-      }
-      const userData = userSnap.data() as Record<string, unknown>;
-      const status = getDailyLoginStatus({
-        suspended: Boolean(userData.suspended),
-        lastDailyClaimDate:
-          typeof userData.lastDailyClaimDate === 'string' ? userData.lastDailyClaimDate : undefined,
-        dailyClaimStreak:
-          typeof userData.dailyClaimStreak === 'number' ? userData.dailyClaimStreak : 0,
-      });
-
-      if (!status.canClaim) {
-        throw new Error(status.reason || 'Daily login bonus already claimed today.');
-      }
-
-      const currentCoins = typeof userData.coins === 'number' ? userData.coins : profile.coins;
-      const nextCoins = currentCoins + DAILY_LOGIN_COINS;
-      const nextAchievements = evaluateUnlockedAchievements({
-        tournamentsJoined:
-          typeof userData.tournamentsJoined === 'number'
-            ? userData.tournamentsJoined
-            : profile.tournamentsJoined,
-        totalKills:
-          typeof userData.totalKills === 'number' ? userData.totalKills : profile.totalKills,
-        totalWins: typeof userData.totalWins === 'number' ? userData.totalWins : profile.totalWins,
-        coins: nextCoins,
-        achievements: Array.isArray(userData.achievements)
-          ? (userData.achievements as string[])
-          : profile.achievements,
-      });
-
-      tx.update(userRef, {
-        coins: nextCoins,
-        lastDailyClaimDate: status.todayKey,
-        lastDailyClaimAt: serverTimestamp(),
-        dailyClaimStreak: status.nextStreak,
-        achievements: nextAchievements,
-        updatedAt: serverTimestamp(),
-      });
-
-      if (lbSnap.exists()) {
-        tx.update(lbRef, {
-          coins: nextCoins,
-          updatedAt: serverTimestamp(),
-        });
-      }
-
-      return {
-        coinsAwarded: DAILY_LOGIN_COINS,
-        nextCoins,
-        nextStreak: status.nextStreak,
-      };
-    });
-  } catch (error) {
-    if (error instanceof Error && !error.message.toLowerCase().includes('permission')) {
-      throw error;
-    }
-    handleFirestoreError(error, OperationType.UPDATE, `users/${profile.uid}`);
-  }
-}
-
-// Coin Withdrawals (1,000 Coins = ₹10)
+// Coin Withdrawals (100 Coins = ₹10)
 export async function requestCoinWithdrawal(params: {
   profile: UserProfile;
   amountCoins: number;

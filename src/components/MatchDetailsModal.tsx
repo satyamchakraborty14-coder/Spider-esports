@@ -37,7 +37,7 @@ import {
   subscribeTournamentRegistrations,
 } from '../lib/firestoreService';
 import { preloadInterstitialAd } from '../lib/admobBridge';
-import { BRAND_ASSETS } from '../lib/seedData';
+import { BRAND_ASSETS, resolveBundledAssetUrl } from '../lib/seedData';
 import { AdMobBannerSlot } from './AdMobUnits';
 
 interface MatchDetailsModalProps {
@@ -300,7 +300,7 @@ export function MatchDetailsModal({
         <div className="relative h-40 sm:h-48 rounded-xl overflow-hidden border border-white/10 bg-[#18181D]">
           {!bannerImgError ? (
             <img
-              src={tournament.bannerUrl || fallbackBanner}
+              src={resolveBundledAssetUrl(tournament.bannerUrl, fallbackBanner)}
               alt={`${tournament.title} banner`}
               referrerPolicy="no-referrer"
               onError={() => setBannerImgError(true)}

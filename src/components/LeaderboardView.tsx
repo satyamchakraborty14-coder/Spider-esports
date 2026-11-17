@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Award, Medal, Trophy } from 'lucide-react';
 import type { AdminSettings, LeaderboardEntry, TournamentResult } from '../types/esports';
-import { BRAND_ASSETS } from '../lib/seedData';
+import { BRAND_ASSETS, resolveBundledAssetUrl } from '../lib/seedData';
 import {
   calculateRupeesFromCoins,
   formatRupees,
@@ -112,7 +112,7 @@ export function LeaderboardView({
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-3">
                         <img
-                          src={entry.avatarUrl || BRAND_ASSETS.defaultAvatar}
+                          src={resolveBundledAssetUrl(entry.avatarUrl, BRAND_ASSETS.defaultAvatar)}
                           alt={entry.username}
                           referrerPolicy="no-referrer"
                           className="w-8 h-8 rounded-lg object-cover border border-white/10 shrink-0"

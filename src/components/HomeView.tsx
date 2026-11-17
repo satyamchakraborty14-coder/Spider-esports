@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, CheckCircle2, Coins, Flame, Gift, Megaphone, Trophy, Users } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Megaphone, Trophy, Users } from 'lucide-react';
 import type {
   AdminSettings,
   Announcement,
@@ -8,11 +8,9 @@ import type {
   TournamentResult,
   UserProfile,
 } from '../types/esports';
-import { BRAND_ASSETS } from '../lib/seedData';
-import { claimDailyLoginBonus } from '../lib/firestoreService';
+import { BRAND_ASSETS, resolveBundledAssetUrl } from '../lib/seedData';
 import { isTodayIsoDate } from '../utils/tournamentRules';
 import { sortLeaderboard } from '../utils/coinSystem';
-import { DAILY_LOGIN_COINS, getDailyLoginStatus } from '../utils/dailyLogin';
 import { TournamentCard } from './TournamentCard';
 import { AdMobBannerSlot } from './AdMobUnits';
 import type { AppTab } from './Navigation';
@@ -29,7 +27,6 @@ interface HomeViewProps {
   adminSettings: AdminSettings;
   consentAccepted: boolean;
   onAcceptConsent: () => void;
-  onAfterDailyClaim?: () => void;
   onSelectTournament: (t: Tournament) => void;
   onNavigateTab: (tab: AppTab) => void;
   onOpenAuth: () => void;
@@ -39,7 +36,7 @@ interface HomeViewProps {
 export function HomeView({
   profile,
   isSignedIn,
-  isEmailVerified,
+  isEmailVerified: _isEmailVerified,
   tournaments,
   results,
   announcements,
@@ -48,48 +45,13 @@ export function HomeView({
   adminSettings,
   consentAccepted,
   onAcceptConsent,
-  onAfterDailyClaim,
   onSelectTournament,
   onNavigateTab,
   onOpenAuth,
-  onToast,
+  onToast: _onToast,
 }: HomeViewProps) {
   const [avatarError, setAvatarError] = useState(false);
   const [heroImgError, setHeroImgError] = useState(false);
-  const [claimingDaily, setClaimingDaily] = useState(false);
-  const [dailyError, setDailyError] = useState<string | null>(null);
-
-  const dailyStatus = getDailyLoginStatus(profile);
-
-  const handleClaimDailyBonus = async () => {
-    setDailyError(null);
-    if (!isSignedIn || !profile) {
-      onOpenAuth();
-      return;
-    }
-    if (!isEmailVerified) {
-      onToast('Verify your email address in Profile first to claim daily login coins.');
-      onNavigateTab('profile');
-      return;
-    }
-    if (!dailyStatus.canClaim || claimingDaily) return;
-
-    setClaimingDaily(true);
-    try {
-      const res = await claimDailyLoginBonus(profile);
-      onToast(
-        `+${res.coinsAwarded} Daily Login Spider Coins claimed! Streak: ${res.nextStreak} day${res.nextStreak === 1 ? '' : 's'}.`
-      );
-      onAfterDailyClaim?.();
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Unable to claim daily login bonus right now.';
-      setDailyError(message);
-      onToast(message);
-    } finally {
-      setClaimingDaily(false);
-    }
-  };
 
   const featured =
     tournaments.find((t) => t.featured && t.status !== 'cancelled') ||
@@ -116,7 +78,7 @@ export function HomeView({
           <div className="w-12 h-12 rounded-xl overflow-hidden border border-white/15 bg-[#121216] shrink-0 flex items-center justify-center">
             {!avatarError ? (
               <img
-                src={profile?.avatarUrl || BRAND_ASSETS.defaultAvatar}
+                src={resolveBundledAssetUrl(profile?.avatarUrl, BRAND_ASSETS.defaultAvatar)}
                 alt={profile?.username || 'Player Avatar'}
                 referrerPolicy="no-referrer"
                 onError={() => setAvatarError(true)}
@@ -168,79 +130,6 @@ export function HomeView({
         </div>
       </section>
 
-      {/* Daily Login Check-In (+10 Spider Coins) */}
-      <section
-        aria-label="Daily Login Bonus"
-        data-testid="daily-login-card"
-        className="rounded-xl border border-amber-500/25 bg-[#121216] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-      >
-        <div className="flex items-start sm:items-center gap-3.5">
-          <div className="w-11 h-11 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
-            <Gift className="w-5 h-5 text-amber-400" />
-          </div>
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="font-display text-lg font-bold text-white">
-                Daily Login Reward: +{DAILY_LOGIN_COINS} Spider Coins
-              </h2>
-              {isSignedIn && dailyStatus.currentStreak > 0 && (
-                <span className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-300 tabular-nums">
-                  <Flame className="w-3 h-3" />
-                  {dailyStatus.currentStreak}d Streak
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-zinc-400">
-              {!isSignedIn
-                ? 'Sign in to claim +10 free Spider Coins every day toward ₹10 UPI/Bank withdrawals (1,000 Coins = ₹10).'
-                : dailyStatus.claimedToday
-                  ? `Claimed today (${dailyStatus.todayKey} UTC). Come back tomorrow for +${DAILY_LOGIN_COINS} more Spider Coins.`
-                  : dailyStatus.reason ||
-                    'Tap Claim to collect your daily +10 Spider Coins instantly.'}
-            </p>
-            {dailyError && (
-              <p role="alert" className="text-xs text-[#FB7185] font-medium">
-                {dailyError}
-              </p>
-            )}
-          </div>
-        </div>
-
-        <button
-          type="button"
-          data-testid="daily-login-claim-btn"
-          disabled={claimingDaily || (isSignedIn && isEmailVerified && !dailyStatus.canClaim)}
-          onClick={() => void handleClaimDailyBonus()}
-          className={`min-h-[44px] px-5 py-2.5 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-2 shrink-0 transition-colors ${
-            !isSignedIn || !isEmailVerified
-              ? 'bg-[#E11D48] hover:bg-[#F43F5E] text-white'
-              : dailyStatus.claimedToday
-                ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 cursor-default'
-                : dailyStatus.canClaim
-                  ? 'bg-amber-500 hover:bg-amber-400 text-black'
-                  : 'bg-zinc-800 text-zinc-400 cursor-not-allowed'
-          }`}
-        >
-          {dailyStatus.claimedToday ? (
-            <>
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              Claimed Today (+{DAILY_LOGIN_COINS})
-            </>
-          ) : (
-            <>
-              <Coins className="w-4 h-4" />
-              {!isSignedIn
-                ? `Sign In · Claim +${DAILY_LOGIN_COINS}`
-                : !isEmailVerified
-                  ? 'Verify Email to Claim'
-                  : claimingDaily
-                    ? 'Claiming...'
-                    : `Claim Daily +${DAILY_LOGIN_COINS} Coins`}
-            </>
-          )}
-        </button>
-      </section>
-
       {/* Featured Tournament Banner (Single Dominant Anchor) */}
       {featured && (
         <section aria-label="Featured Tournament" className="rounded-2xl border border-white/10 bg-[#121216] overflow-hidden">
@@ -248,7 +137,7 @@ export function HomeView({
             <div className="lg:col-span-7 relative min-h-[240px] lg:min-h-[340px] bg-[#18181D]">
               {!heroImgError ? (
                 <img
-                  src={featured.bannerUrl || BRAND_ASSETS.battleRoyaleBanner}
+                  src={resolveBundledAssetUrl(featured.bannerUrl, BRAND_ASSETS.battleRoyaleBanner)}
                   alt={featured.title}
                   referrerPolicy="no-referrer"
                   onError={() => setHeroImgError(true)}

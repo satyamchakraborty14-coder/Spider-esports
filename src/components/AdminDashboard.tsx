@@ -16,6 +16,7 @@ import {
   Shield,
   Trash2,
   Trophy,
+  Upload,
   Users,
   Wallet,
 } from 'lucide-react';
@@ -38,6 +39,8 @@ import {
   CATEGORIES_WITH_MODES,
   getModeDefinition,
   isStrictSoleAdminSession,
+  MAX_TOURNAMENT_SLOTS,
+  MIN_TOURNAMENT_SLOTS,
   SOLE_ADMIN_EMAIL,
   validateAdminPassword,
   validateAdminSlotUpdate,
@@ -91,7 +94,12 @@ import {
   setOrUpdateAppPassword,
   subscribeTournamentRegistrations,
 } from '../lib/firestoreService';
-import { BRAND_ASSETS, MATCH_BANNER_PRESETS } from '../lib/seedData';
+import { BRAND_ASSETS, MATCH_BANNER_PRESETS, resolveBundledAssetUrl } from '../lib/seedData';
+import {
+  ALLOWED_IMAGE_INPUT_ACCEPT,
+  compressImageFileToDataUrl,
+  estimateDataUrlSizeKb,
+} from '../utils/imageUpload';
 
 interface AdminDashboardProps {
   adminUid: string;
@@ -157,6 +165,9 @@ export function AdminDashboard({
   const [savingSlotId, setSavingSlotId] = useState<string | null>(null);
   const [bannerDrafts, setBannerDrafts] = useState<Record<string, string>>({});
   const [savingBannerId, setSavingBannerId] = useState<string | null>(null);
+  const [uploadingFormBanner, setUploadingFormBanner] = useState(false);
+  const [formBannerError, setFormBannerError] = useState<string | null>(null);
+  const [uploadingInlineBannerId, setUploadingInlineBannerId] = useState<string | null>(null);
   const [regSlotDrafts, setRegSlotDrafts] = useState<Record<string, number>>({});
   const [savingRegSlotId, setSavingRegSlotId] = useState<string | null>(null);
 
@@ -258,13 +269,14 @@ export function AdminDashboard({
     setBannerDrafts(() => {
       const next: Record<string, string> = {};
       for (const t of tournaments) {
-        next[t.id] =
-          t.bannerUrl ||
-          (t.category === 'Clash Squad'
+        next[t.id] = resolveBundledAssetUrl(
+          t.bannerUrl,
+          t.category === 'Clash Squad'
             ? BRAND_ASSETS.clashSquadBanner
             : t.category === 'Lone Wolf'
               ? BRAND_ASSETS.loneWolfBanner
-              : BRAND_ASSETS.battleRoyaleBanner);
+              : BRAND_ASSETS.battleRoyaleBanner
+        );
       }
       return next;
     });
@@ -378,7 +390,8 @@ export function AdminDashboard({
     setReleaseLocal(t.credentialsReleaseAt.slice(0, 16));
     setMaxSlots(t.maxSlots);
     setFilledSlots(t.filledSlots);
-    setBannerUrl(t.bannerUrl || getDefaultCategoryBanner(t.category));
+    setBannerUrl(resolveBundledAssetUrl(t.bannerUrl, getDefaultCategoryBanner(t.category)));
+    setFormBannerError(null);
     setCoinReward(t.coinReward);
     setPerKillCoins(t.perKillCoins);
     setStatus(t.status);
@@ -455,6 +468,47 @@ export function AdminDashboard({
       onToast(err instanceof Error ? err.message : 'Unable to update slots.');
     } finally {
       setSavingSlotId(null);
+    }
+  };
+
+  const handleFormBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setFormBannerError(null);
+    setUploadingFormBanner(true);
+    try {
+      const result = await compressImageFileToDataUrl(file);
+      setBannerUrl(result.dataUrl);
+      onToast(`Image uploaded (${result.width}x${result.height}, ~${result.approxKb} KB).`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to process selected image.';
+      setFormBannerError(msg);
+      onToast(msg);
+    } finally {
+      setUploadingFormBanner(false);
+    }
+  };
+
+  const handleInlineBannerUpload = async (
+    tournament: Tournament,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setUploadingInlineBannerId(tournament.id);
+    try {
+      const result = await compressImageFileToDataUrl(file);
+      setBannerDrafts((prev) => ({ ...prev, [tournament.id]: result.dataUrl }));
+      await adminUpdateTournamentBanner(tournament.id, result.dataUrl);
+      onToast(`Uploaded & saved match picture for ${tournament.title} (~${result.approxKb} KB).`);
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Unable to upload match picture.');
+    } finally {
+      setUploadingInlineBannerId(null);
     }
   };
 
@@ -868,8 +922,8 @@ export function AdminDashboard({
                 <input
                   id="adm-slots"
                   type="number"
-                  min={editingId ? Math.max(2, filledSlots) : 2}
-                  max={100}
+                  min={editingId ? Math.max(MIN_TOURNAMENT_SLOTS, filledSlots) : MIN_TOURNAMENT_SLOTS}
+                  max={MAX_TOURNAMENT_SLOTS}
                   value={maxSlots}
                   onChange={(e) => setMaxSlots(Number(e.target.value))}
                   className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
@@ -883,23 +937,49 @@ export function AdminDashboard({
                 : 'Filled Slots start at 0 and automatically increase (+1) as players join inside the app.'}
             </p>
 
-            {/* Match Banner Picture Selector */}
+            {/* Match Banner Picture Uploader & Presets */}
             <div className="rounded-lg border border-white/10 bg-[#09090B] p-3 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <label htmlFor="adm-banner-url" className="text-xs font-medium text-zinc-200 flex items-center gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-zinc-200 flex items-center gap-1.5">
                   <ImageIcon className="w-3.5 h-3.5 text-[#E11D48]" />
                   Match Picture
-                </label>
-                <span className="text-[11px] text-zinc-500">Preset or https:// URL</span>
+                </span>
+                <span className="text-[11px] text-zinc-400">
+                  {bannerUrl.startsWith('data:image/')
+                    ? `Uploaded photo (~${estimateDataUrlSizeKb(bannerUrl)} KB)`
+                    : MATCH_BANNER_PRESETS.find((p) => p.url === bannerUrl)?.label || 'Custom image'}
+                </span>
               </div>
               <div className="aspect-video w-full rounded-md overflow-hidden border border-white/10 bg-[#121216]">
                 <img
-                  src={bannerUrl || getDefaultCategoryBanner(category)}
+                  src={resolveBundledAssetUrl(bannerUrl, getDefaultCategoryBanner(category))}
                   alt="Match banner preview"
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover"
                 />
               </div>
+              <label
+                htmlFor="adm-banner-upload"
+                className={`min-h-[42px] w-full px-3 py-2 rounded-lg border border-dashed border-[#E11D48]/60 bg-[#121216] hover:bg-[#18181D] text-xs font-semibold text-white flex items-center justify-center gap-2 cursor-pointer transition-colors ${
+                  uploadingFormBanner ? 'opacity-60 pointer-events-none' : ''
+                }`}
+              >
+                <Upload className="w-4 h-4 text-[#F43F5E]" />
+                {uploadingFormBanner ? 'Compressing & Preparing Image...' : 'Upload Match Image (PNG / JPG / WEBP)'}
+              </label>
+              <input
+                id="adm-banner-upload"
+                type="file"
+                accept={ALLOWED_IMAGE_INPUT_ACCEPT}
+                disabled={uploadingFormBanner}
+                onChange={(e) => void handleFormBannerUpload(e)}
+                className="sr-only"
+              />
+              {formBannerError && (
+                <p role="alert" className="text-[11px] text-[#FB7185] font-medium">
+                  {formBannerError}
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-1.5">
                 {MATCH_BANNER_PRESETS.map((preset) => {
                   const selected = bannerUrl === preset.url;
@@ -907,7 +987,10 @@ export function AdminDashboard({
                     <button
                       key={preset.id}
                       type="button"
-                      onClick={() => setBannerUrl(preset.url)}
+                      onClick={() => {
+                        setFormBannerError(null);
+                        setBannerUrl(preset.url);
+                      }}
                       className={`min-h-[34px] px-2.5 py-1 rounded text-[11px] font-medium text-left truncate border transition-colors ${
                         selected
                           ? 'bg-[#E11D48]/20 border-[#E11D48] text-white'
@@ -919,15 +1002,6 @@ export function AdminDashboard({
                   );
                 })}
               </div>
-              <input
-                id="adm-banner-url"
-                type="text"
-                maxLength={300}
-                value={bannerUrl}
-                onChange={(e) => setBannerUrl(e.target.value)}
-                placeholder="https://... or select a preset above"
-                className="w-full min-h-[38px] px-3 py-1.5 rounded-md border border-white/10 bg-[#121216] text-xs text-white"
-              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -1086,9 +1160,13 @@ export function AdminDashboard({
               {tournaments.map((t) => {
                 const draftMax = slotDrafts[t.id] ?? t.maxSlots;
                 const isSlotDirty = draftMax !== t.maxSlots;
-                const currentBanner = t.bannerUrl || getDefaultCategoryBanner(t.category);
+                const currentBanner = resolveBundledAssetUrl(
+                  t.bannerUrl,
+                  getDefaultCategoryBanner(t.category)
+                );
                 const draftBanner = bannerDrafts[t.id] ?? currentBanner;
                 const isBannerDirty = draftBanner.trim() !== currentBanner;
+                const isUploadingInline = uploadingInlineBannerId === t.id;
                 return (
                   <div key={t.id} className="py-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
@@ -1152,8 +1230,8 @@ export function AdminDashboard({
                             <input
                               id={`max-${t.id}`}
                               type="number"
-                              min={Math.max(2, t.filledSlots)}
-                              max={100}
+                              min={Math.max(MIN_TOURNAMENT_SLOTS, t.filledSlots)}
+                              max={MAX_TOURNAMENT_SLOTS}
                               value={draftMax}
                               onChange={(e) =>
                                 setSlotDrafts((prev) => ({
@@ -1161,7 +1239,7 @@ export function AdminDashboard({
                                   [t.id]: Number(e.target.value),
                                 }))
                               }
-                              className="w-20 min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs font-mono-tabular text-white"
+                              className="w-24 min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs font-mono-tabular text-white"
                             />
                           </div>
                           <button
@@ -1175,16 +1253,13 @@ export function AdminDashboard({
                         </div>
                       </div>
 
-                      {/* Quick Match Picture Update */}
+                      {/* Quick Match Picture Upload & Preset */}
                       <div className="flex flex-col gap-1.5 rounded-lg bg-[#09090B] border border-white/10 p-2.5">
                         <div className="flex items-center justify-between gap-2">
-                          <label
-                            htmlFor={`pic-${t.id}`}
-                            className="text-[11px] text-zinc-400 flex items-center gap-1"
-                          >
+                          <span className="text-[11px] text-zinc-400 flex items-center gap-1">
                             <ImageIcon className="w-3 h-3 text-[#E11D48]" />
                             Match Picture
-                          </label>
+                          </span>
                           <select
                             aria-label={`Choose preset picture for ${t.title}`}
                             value={
@@ -1208,16 +1283,24 @@ export function AdminDashboard({
                           </select>
                         </div>
                         <div className="flex items-center gap-2">
+                          <label
+                            htmlFor={`pic-upload-${t.id}`}
+                            className={`min-w-0 flex-1 min-h-[36px] px-2.5 py-1.5 rounded-md border border-dashed border-[#E11D48]/50 bg-[#121216] hover:bg-[#18181D] text-xs font-medium text-zinc-200 inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
+                              isUploadingInline ? 'opacity-60 pointer-events-none' : ''
+                            }`}
+                          >
+                            <Upload className="w-3.5 h-3.5 text-[#F43F5E] shrink-0" />
+                            <span className="truncate">
+                              {isUploadingInline ? 'Uploading...' : 'Upload Image'}
+                            </span>
+                          </label>
                           <input
-                            id={`pic-${t.id}`}
-                            type="text"
-                            maxLength={300}
-                            value={draftBanner}
-                            onChange={(e) =>
-                              setBannerDrafts((prev) => ({ ...prev, [t.id]: e.target.value }))
-                            }
-                            placeholder="https://..."
-                            className="min-w-0 flex-1 min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs text-white"
+                            id={`pic-upload-${t.id}`}
+                            type="file"
+                            accept={ALLOWED_IMAGE_INPUT_ACCEPT}
+                            disabled={isUploadingInline}
+                            onChange={(e) => void handleInlineBannerUpload(t, e)}
+                            className="sr-only"
                           />
                           <button
                             type="button"
@@ -1804,7 +1887,7 @@ export function AdminDashboard({
                 <p className="text-xs text-zinc-400 py-3">No active registrations for this match.</p>
               ) : (
                 matchRegistrations.map((reg) => {
-                  const maxBracketSlots = selectedTournament?.maxSlots ?? 100;
+                  const maxBracketSlots = selectedTournament?.maxSlots ?? MAX_TOURNAMENT_SLOTS;
                   const draftSlot = regSlotDrafts[reg.id] ?? reg.slotNumber;
                   return (
                     <div key={reg.id} className="py-3 space-y-2 text-xs">
@@ -1867,14 +1950,14 @@ export function AdminDashboard({
         </div>
       )}
 
-      {/* 4. WITHDRAWALS MANAGEMENT (1,000 Coins = ₹10) */}
+      {/* 4. WITHDRAWALS MANAGEMENT (100 Coins = ₹10) */}
       {section === 'withdrawals' && (
         <div className="rounded-xl border border-white/10 bg-[#121216] p-5 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h2 className="font-display text-xl font-bold text-white flex items-center gap-2">
                 <Wallet className="w-5 h-5 text-amber-400" />
-                Player Withdrawal Requests (1,000 Coins = ₹10)
+                Player Withdrawal Requests (100 Coins = ₹10)
               </h2>
               <p className="text-xs text-zinc-400 mt-0.5">
                 Approve paid payouts or reject to automatically refund Spider Coins to the player wallet.

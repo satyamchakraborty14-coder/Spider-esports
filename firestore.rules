@@ -117,12 +117,12 @@ service cloud.firestore {
       && data.category in ['Battle Royale', 'Clash Squad', 'Lone Wolf']
       && data.mode in ['Solo', 'Duo', 'Squad', 'CS 1v1', 'CS 2v2', 'CS 4v4', 'Lone Wolf 1v1', 'Lone Wolf 2v2']
       && data.mapName is string && data.mapName.size() >= 2 && data.mapName.size() <= 48
-      && (!('bannerUrl' in data) || (data.bannerUrl is string && data.bannerUrl.size() <= 300))
+      && (!('bannerUrl' in data) || (data.bannerUrl is string && data.bannerUrl.size() <= 200000))
       && data.matchDate is string && data.matchDate.size() >= 4 && data.matchDate.size() <= 32
       && data.matchTime is string && data.matchTime.size() >= 3 && data.matchTime.size() <= 32
       && data.registrationDeadline is timestamp
       && data.credentialsReleaseAt is timestamp
-      && data.maxSlots is int && data.maxSlots >= 2 && data.maxSlots <= 100
+      && data.maxSlots is int && data.maxSlots >= 2 && data.maxSlots <= 1000000
       && data.filledSlots is int && data.filledSlots >= 0 && data.filledSlots <= data.maxSlots
       && data.status in ['draft', 'upcoming', 'live', 'completed', 'cancelled']
       && data.featured is bool
@@ -154,7 +154,7 @@ service cloud.firestore {
       && data.freeFireUid.matches('^[0-9]+$')
       && (!('teamName' in data) || (data.teamName is string && data.teamName.size() <= 40))
       && (!('teammates' in data) || (data.teammates is list && data.teammates.size() <= 4))
-      && data.slotNumber is int && data.slotNumber >= 1 && data.slotNumber <= 100
+      && data.slotNumber is int && data.slotNumber >= 1 && data.slotNumber <= 1000000
       && data.status in ['confirmed', 'cancelled']
       && data.createdAt is timestamp
       && data.updatedAt is timestamp;
@@ -247,11 +247,11 @@ service cloud.firestore {
       && data.username is string && data.username.size() >= 2 && data.username.size() <= 32
       && data.freeFireUid is string && data.freeFireUid.size() >= 6 && data.freeFireUid.size() <= 16
       && data.freeFireUid.matches('^[0-9]+$')
-      && data.coins is int && data.coins >= 1000 && data.coins <= 10000000
+      && data.coins is int && data.coins >= 100 && data.coins <= 10000000
       && (data.rupees is int || data.rupees is float)
-      && data.rupees >= 10 && data.rupees <= 100000
-      && data.rupees * 100 >= data.coins - 0.01
-      && data.rupees * 100 <= data.coins + 0.01
+      && data.rupees >= 10 && data.rupees <= 1000000
+      && data.rupees * 10 >= data.coins - 0.01
+      && data.rupees * 10 <= data.coins + 0.01
       && data.method in ['upi', 'bank']
       && data.destination is string && data.destination.size() >= 5 && data.destination.size() <= 120
       && data.status in ['pending', 'approved', 'rejected']
@@ -358,28 +358,7 @@ service cloud.firestore {
               (
                 incoming().diff(existing()).affectedKeys().hasOnly(['coins', 'updatedAt'])
                 && incoming().coins >= 0
-                && incoming().coins <= existing().coins - 1000
-              ) ||
-              (
-                incoming().diff(existing()).affectedKeys().hasOnly([
-                  'coins', 'lastDailyClaimDate', 'lastDailyClaimAt',
-                  'dailyClaimStreak', 'achievements', 'updatedAt'
-                ])
-                && incoming().coins == existing().coins + 10
-                && incoming().lastDailyClaimDate is string
-                && incoming().lastDailyClaimDate.size() == 10
-                && incoming().lastDailyClaimDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
-                && incoming().lastDailyClaimAt == request.time
-                && incoming().dailyClaimStreak is int
-                && incoming().dailyClaimStreak >= 1
-                && incoming().dailyClaimStreak <= 36500
-                && (!('lastDailyClaimDate' in existing()) || incoming().lastDailyClaimDate > existing().lastDailyClaimDate)
-                && (
-                  !('lastDailyClaimAt' in existing()) ||
-                  existing().lastDailyClaimAt.year() != request.time.year() ||
-                  existing().lastDailyClaimAt.month() != request.time.month() ||
-                  existing().lastDailyClaimAt.day() != request.time.day()
-                )
+                && incoming().coins <= existing().coins - 100
               )
             )
           )
@@ -560,13 +539,7 @@ service cloud.firestore {
                 && incoming().weeklyKills == existing().weeklyKills
                 && incoming().weeklyPoints == existing().weeklyPoints
               ) ||
-              incoming().diff(existing()).affectedKeys().hasOnly(['username', 'avatarUrl', 'updatedAt']) ||
-              (
-                incoming().diff(existing()).affectedKeys().hasOnly(['coins', 'updatedAt'])
-                && incoming().coins == existing().coins + 10
-                && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins == incoming().coins
-                && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.lastDailyClaimAt == request.time
-              )
+              incoming().diff(existing()).affectedKeys().hasOnly(['username', 'avatarUrl', 'updatedAt'])
             )
           )
         );

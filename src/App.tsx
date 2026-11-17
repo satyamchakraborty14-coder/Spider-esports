@@ -501,7 +501,6 @@ export default function App() {
                 adminSettings={adminSettings}
                 consentAccepted={consentAccepted}
                 onAcceptConsent={() => updateConsentPreference(true)}
-                onAfterDailyClaim={() => maybeShowNaturalBreakInterstitial(true, true)}
                 onSelectTournament={(t) => setSelectedTournamentId(t.id)}
                 onNavigateTab={handleSelectTab}
                 onOpenAuth={() => setAuthModalOpen(true)}
@@ -589,7 +588,7 @@ export default function App() {
           <p>
             SPIDER ESPORTS is an independent community tournament platform. It is not affiliated with, endorsed by, or sponsored by Garena or Free Fire.
           </p>
-          <p className="shrink-0">100% Free Entry · 1,000 Coins = ₹10</p>
+          <p className="shrink-0">100% Free Entry · 100 Coins = ₹10</p>
         </footer>
       </main>
 

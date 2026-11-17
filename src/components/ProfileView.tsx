@@ -31,7 +31,7 @@ import {
   updatePlayerIdentity,
 } from '../lib/firestoreService';
 import { showRewardedAdForCosmetic } from '../lib/admobBridge';
-import { BRAND_ASSETS } from '../lib/seedData';
+import { BRAND_ASSETS, resolveBundledAssetUrl } from '../lib/seedData';
 import type {
   AdminSettings,
   LeaderboardEntry,
@@ -49,7 +49,7 @@ import {
   COSMETIC_CATALOG,
   formatRupees,
   getPlayerLeaderboardRank,
-  INR_PER_1000_COINS,
+  INR_PER_100_COINS,
   isCosmeticUnlocked,
   MIN_WITHDRAWAL_COINS,
   validateWithdrawalRequest,
@@ -402,7 +402,7 @@ export function ProfileView({
             Create Your SPIDER ESPORTS Profile
           </h1>
           <p className="text-sm text-zinc-400 max-w-lg mx-auto">
-            Register with your unique username and Free Fire UID to join free community tournaments, earn Spider Coins from playing, kills, and wins (1,000 Coins = ₹10), and climb the global ladder.
+            Register with your unique username and Free Fire UID to join free community tournaments, earn Spider Coins from playing, kills, and wins (100 Coins = ₹10), and climb the global ladder.
           </p>
           <button
             type="button"
@@ -448,7 +448,7 @@ export function ProfileView({
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
               <div className="flex items-center gap-4">
                 <img
-                  src={profile.avatarUrl || BRAND_ASSETS.defaultAvatar}
+                  src={resolveBundledAssetUrl(profile.avatarUrl, BRAND_ASSETS.defaultAvatar)}
                   alt={profile.username}
                   referrerPolicy="no-referrer"
                   className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border border-white/15 shrink-0"
@@ -561,7 +561,7 @@ export function ProfileView({
                 </span>
                 <span className="text-zinc-400">
                   {userCoins >= MIN_WITHDRAWAL_COINS
-                    ? 'Withdrawal unlocked · 1,000 Coins = ₹10'
+                    ? 'Withdrawal unlocked · 100 Coins = ₹10'
                     : `${(MIN_WITHDRAWAL_COINS - userCoins).toLocaleString()} more coins to unlock ₹10 withdrawal`}
                 </span>
               </div>
@@ -598,7 +598,7 @@ export function ProfileView({
             </div>
           </section>
 
-          {/* Spider Coin Wallet & Withdrawal (1,000 Coins = ₹10) */}
+          {/* Spider Coin Wallet & Withdrawal (100 Coins = ₹10) */}
           <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <form
               onSubmit={handleSubmitWithdrawal}
@@ -611,7 +611,7 @@ export function ProfileView({
                     Withdraw Spider Coins
                   </h2>
                   <p className="text-xs text-zinc-400 mt-1">
-                    Rate: <strong className="text-white">{COINS_PER_10_INR.toLocaleString()} Coins = ₹{INR_PER_1000_COINS}</strong>. Coins are earned through match play, verified kills, and tournament wins credited by admin.
+                    Rate: <strong className="text-white">{COINS_PER_10_INR.toLocaleString()} Coins = ₹{INR_PER_100_COINS}</strong>. Coins are earned through match play, verified kills, and tournament wins credited by admin.
                   </p>
                 </div>
                 <div className="text-right shrink-0 tabular-nums">
@@ -621,7 +621,7 @@ export function ProfileView({
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {[1000, 2500, 5000].map((preset) => (
+                {[100, 250, 500].map((preset) => (
                   <button
                     key={preset}
                     type="button"
@@ -637,7 +637,7 @@ export function ProfileView({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label htmlFor="wd-coins" className="block text-xs text-zinc-300 mb-1">
-                    Coins to Withdraw (Min 1,000)
+                    Coins to Withdraw (Min 100)
                   </label>
                   <input
                     id="wd-coins"
@@ -718,7 +718,7 @@ export function ProfileView({
                   <h2 className="font-display text-2xl font-bold text-white">
                     Withdrawal History ({withdrawals.length})
                   </h2>
-                  <p className="text-[11px] text-zinc-400">1,000 Coins = ₹10 · Click any request or open modal for full details</p>
+                  <p className="text-[11px] text-zinc-400">100 Coins = ₹10 · Click any request or open modal for full details</p>
                 </div>
                 <button
                   type="button"
@@ -1213,7 +1213,7 @@ export function ProfileView({
           <div className="rounded-lg bg-[#09090B] border border-white/10 p-4 text-xs text-zinc-300 space-y-2 leading-relaxed">
             <p className="font-semibold text-white">Terms &amp; Conditions</p>
             <p>
-              SPIDER ESPORTS hosts strictly free-to-play community tournaments with zero entry fees, zero deposits, and zero paid participation. Players earn Spider Coins exclusively through verified gameplay (playing, kills, and wins) credited by administrators, redeemable at 1,000 Spider Coins = ₹10.
+              SPIDER ESPORTS hosts strictly free-to-play community tournaments with zero entry fees, zero deposits, and zero paid participation. Players earn Spider Coins exclusively through verified gameplay (playing, kills, and wins) credited by administrators, redeemable at 100 Spider Coins = ₹10.
             </p>
           </div>
         )}
@@ -1225,7 +1225,7 @@ export function ProfileView({
               <li>Single Currency: Spider Coins are the only redeemable reward unit in SPIDER ESPORTS.</li>
               <li>Earning Rules: Coins are credited strictly by admins for verified match play, eliminations, and tournament wins.</li>
               <li>Ad Policy: Rewarded ads never grant Spider Coins, cash, prizes, or tournament entry — only optional non-cash profile emblems.</li>
-              <li>Conversion Rate: 1,000 Spider Coins = ₹10 (minimum withdrawal: 1,000 Coins).</li>
+              <li>Conversion Rate: 100 Spider Coins = ₹10 (minimum withdrawal: 100 Coins).</li>
               <li>Verification: Admins verify match results and withdrawal payout details (UPI / Bank) before approval.</li>
             </ul>
           </div>

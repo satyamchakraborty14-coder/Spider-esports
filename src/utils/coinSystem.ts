@@ -6,9 +6,9 @@ import type {
   WithdrawalMethod,
 } from '../types/esports';
 
-export const COINS_PER_10_INR = 1000;
-export const INR_PER_1000_COINS = 10;
-export const MIN_WITHDRAWAL_COINS = 1000;
+export const COINS_PER_10_INR = 100;
+export const INR_PER_100_COINS = 10;
+export const MIN_WITHDRAWAL_COINS = 100;
 export const MAX_WITHDRAWAL_COINS = 10_000_000;
 
 export const COSMETIC_CATALOG: CosmeticItem[] = [
@@ -115,16 +115,16 @@ export const ACHIEVEMENTS_CATALOG: AchievementItem[] = [
   },
   {
     id: 'coin-milestone-1000',
-    title: '1K Coin Earner',
-    description: 'Accumulate 1,000 Spider Coins (₹10 payout threshold) from match rewards.',
+    title: '100 Coin Earner',
+    description: 'Accumulate 100 Spider Coins (₹10 payout threshold) from match rewards.',
     metric: 'coins',
-    threshold: 1000,
+    threshold: 100,
   },
 ];
 
 export function calculateRupeesFromCoins(coins: number): number {
   if (!Number.isFinite(coins) || coins <= 0) return 0;
-  return Math.round(((coins * INR_PER_1000_COINS) / COINS_PER_10_INR) * 100) / 100;
+  return Math.round(((coins * INR_PER_100_COINS) / COINS_PER_10_INR) * 100) / 100;
 }
 
 export function formatRupees(rupees: number): string {
@@ -172,7 +172,7 @@ export function validateWithdrawalRequest(params: {
   if (!Number.isInteger(amountCoins) || amountCoins < MIN_WITHDRAWAL_COINS) {
     return {
       valid: false,
-      error: `Minimum withdrawal is ${MIN_WITHDRAWAL_COINS.toLocaleString()} coins (₹${INR_PER_1000_COINS}).`,
+      error: `Minimum withdrawal is ${MIN_WITHDRAWAL_COINS.toLocaleString()} coins (₹${INR_PER_100_COINS}).`,
     };
   }
   if (amountCoins > MAX_WITHDRAWAL_COINS) {

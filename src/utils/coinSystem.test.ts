@@ -15,11 +15,12 @@ import {
 } from './coinSystem';
 import type { LeaderboardEntry } from '../types/esports';
 
-test('coin to rupee conversion strictly follows 1000 coins = 10 rupees', () => {
+test('coin to rupee conversion strictly follows 100 coins = 10 rupees', () => {
   assert.equal(calculateRupeesFromCoins(0), 0);
-  assert.equal(calculateRupeesFromCoins(1000), 10);
-  assert.equal(calculateRupeesFromCoins(2500), 25);
-  assert.equal(calculateRupeesFromCoins(1250), 12.5);
+  assert.equal(calculateRupeesFromCoins(100), 10);
+  assert.equal(calculateRupeesFromCoins(250), 25);
+  assert.equal(calculateRupeesFromCoins(125), 12.5);
+  assert.equal(calculateRupeesFromCoins(1000), 100);
   assert.equal(formatRupees(10), '₹10');
   assert.equal(formatRupees(12.5), '₹12.50');
 });
@@ -54,11 +55,11 @@ test('admin coin adjustment validates non-zero integers and prevents negative ba
   );
 });
 
-test('withdrawal validation enforces 1000 coin minimum, balance limit, and valid payout destination', () => {
+test('withdrawal validation enforces 100 coin minimum, balance limit, and valid payout destination', () => {
   assert.equal(
     validateWithdrawalRequest({
-      amountCoins: 900,
-      availableCoins: 5000,
+      amountCoins: 90,
+      availableCoins: 500,
       method: 'upi',
       destination: 'spider@upi',
     }).valid,
@@ -66,8 +67,8 @@ test('withdrawal validation enforces 1000 coin minimum, balance limit, and valid
   );
   assert.equal(
     validateWithdrawalRequest({
-      amountCoins: 2000,
-      availableCoins: 1500,
+      amountCoins: 200,
+      availableCoins: 150,
       method: 'upi',
       destination: 'spider@upi',
     }).valid,
@@ -75,8 +76,8 @@ test('withdrawal validation enforces 1000 coin minimum, balance limit, and valid
   );
   assert.equal(
     validateWithdrawalRequest({
-      amountCoins: 1000,
-      availableCoins: 1500,
+      amountCoins: 100,
+      availableCoins: 150,
       method: 'upi',
       destination: 'invalid-upi',
     }).valid,
@@ -84,14 +85,14 @@ test('withdrawal validation enforces 1000 coin minimum, balance limit, and valid
   );
   assert.deepEqual(
     validateWithdrawalRequest({
-      amountCoins: 1500,
-      availableCoins: 2000,
+      amountCoins: 150,
+      availableCoins: 200,
       method: 'upi',
       destination: 'satyam@okaxis',
     }),
     {
       valid: true,
-      coins: 1500,
+      coins: 150,
       rupees: 15,
       destination: 'satyam@okaxis',
     }

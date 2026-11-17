@@ -49542,12 +49542,26 @@ async function testConnection() {
 testConnection();
 // src/lib/seedData.ts
 var BRAND_ASSETS = {
-	logo: "/src/assets/images/spider_esports_logo_1794723402588.jpg",
-	battleRoyaleBanner: "/src/assets/images/hero_arena_banner_1794723403097.jpg",
-	clashSquadBanner: "/src/assets/images/clash_squad_banner_1794723403367.jpg",
-	loneWolfBanner: "/src/assets/images/lone_wolf_banner_1794723403605.jpg",
-	defaultAvatar: "/src/assets/images/avatar_cyber_spider_1794723403258.jpg"
+	logo: "/assets/spider_esports_logo_ff-6FC-sVnj.png",
+	battleRoyaleBanner: "/assets/hero_arena_banner_1794723403097-D01E3JFb.jpg",
+	clashSquadBanner: "/assets/clash_squad_banner_1794723403367-DO7XE4a4.jpg",
+	loneWolfBanner: "/assets/lone_wolf_banner_1794723403605-WPg-LuKH.jpg",
+	defaultAvatar: "/assets/avatar_cyber_spider_ff-Zgfiww5G.png"
 };
+var LEGACY_ASSET_MAP = {
+	"/src/assets/images/spider_esports_logo_1794723402588.jpg": BRAND_ASSETS.logo,
+	"/src/assets/images/spider_esports_logo_ff.png": BRAND_ASSETS.logo,
+	"/src/assets/images/hero_arena_banner_1794723403097.jpg": BRAND_ASSETS.battleRoyaleBanner,
+	"/src/assets/images/clash_squad_banner_1794723403367.jpg": BRAND_ASSETS.clashSquadBanner,
+	"/src/assets/images/lone_wolf_banner_1794723403605.jpg": BRAND_ASSETS.loneWolfBanner,
+	"/src/assets/images/avatar_cyber_spider_1794723403258.jpg": BRAND_ASSETS.defaultAvatar,
+	"/src/assets/images/avatar_cyber_spider_ff.png": BRAND_ASSETS.defaultAvatar
+};
+function resolveBundledAssetUrl(url, fallback) {
+	const trimmed = (url || "").trim();
+	if (!trimmed) return fallback;
+	return LEGACY_ASSET_MAP[trimmed] || trimmed;
+}
 var MATCH_BANNER_PRESETS = [
 	{
 		id: "br-arena",
@@ -49566,7 +49580,7 @@ var MATCH_BANNER_PRESETS = [
 	},
 	{
 		id: "cyber-spider",
-		label: "Cyber Spider Emblem",
+		label: "FF Spider Character",
 		url: BRAND_ASSETS.defaultAvatar
 	}
 ];
@@ -49899,7 +49913,7 @@ var SEED_LEADERBOARD = [
 var SEED_ANNOUNCEMENTS = [{
 	id: "ann-season-open",
 	title: "Season 04 Community Scrims Now Open",
-	message: "All Battle Royale, Clash Squad, and Lone Wolf rooms are 100% free to enter. Play matches, score kills, and win to earn Spider Coins (1,000 Coins = ₹10 payout).",
+	message: "All Battle Royale, Clash Squad, and Lone Wolf rooms are 100% free to enter. Play matches, score kills, and win to earn Spider Coins (100 Coins = ₹10 payout).",
 	priority: "high",
 	active: true,
 	createdAt: minusHours(12)
@@ -49924,13 +49938,10 @@ var DEFAULT_ADMIN_SETTINGS = {
 	rewardedAdsEnabled: true,
 	interstitialCooldownSeconds: 90,
 	bannerPlacement: "all_screens",
-	featuredAnnouncement: "100% Free Free Fire Tournaments · Earn Spider Coins (1,000 Coins = ₹10)",
+	featuredAnnouncement: "100% Free Free Fire Tournaments · Earn Spider Coins (100 Coins = ₹10)",
 	maintenanceMode: false,
 	updatedAt: minusHours(1)
 };
-// src/utils/coinSystem.ts
-var COINS_PER_10_INR = 1e3;
-var MIN_WITHDRAWAL_COINS = 1e3;
 var MAX_WITHDRAWAL_COINS = 1e7;
 var COSMETIC_CATALOG = [
 	{
@@ -50032,15 +50043,15 @@ var ACHIEVEMENTS_CATALOG = [
 	},
 	{
 		id: "coin-milestone-1000",
-		title: "1K Coin Earner",
-		description: "Accumulate 1,000 Spider Coins (₹10 payout threshold) from match rewards.",
+		title: "100 Coin Earner",
+		description: "Accumulate 100 Spider Coins (₹10 payout threshold) from match rewards.",
 		metric: "coins",
-		threshold: 1e3
+		threshold: 100
 	}
 ];
 function calculateRupeesFromCoins(coins) {
 	if (!Number.isFinite(coins) || coins <= 0) return 0;
-	return Math.round(coins * 10 / COINS_PER_10_INR * 100) / 100;
+	return Math.round(coins * 10 / 100 * 100) / 100;
 }
 function formatRupees(rupees) {
 	return Number.isInteger(rupees) ? `₹${rupees}` : `₹${rupees.toFixed(2)}`;
@@ -50071,9 +50082,9 @@ function validateAdminCoinAdjustment(params) {
 }
 function validateWithdrawalRequest(params) {
 	const { amountCoins, availableCoins, method, destination } = params;
-	if (!Number.isInteger(amountCoins) || amountCoins < 1e3) return {
+	if (!Number.isInteger(amountCoins) || amountCoins < 100) return {
 		valid: false,
-		error: `Minimum withdrawal is ${MIN_WITHDRAWAL_COINS.toLocaleString()} coins (₹10).`
+		error: `Minimum withdrawal is ${100 .toLocaleString()} coins (₹10).`
 	};
 	if (amountCoins > 1e7) return {
 		valid: false,
@@ -50135,58 +50146,110 @@ function canShowInterstitial(params) {
 	if (lastShownAtMs <= 0) return true;
 	return nowMs - lastShownAtMs >= cooldownMs;
 }
-// src/utils/dailyLogin.ts
-/**
-* Returns the UTC calendar date string (YYYY-MM-DD) matching Firestore server timestamps.
-*/
-function getUtcDateKey(date = /* @__PURE__ */ new Date()) {
-	return date.toISOString().slice(0, 10);
+var ALLOWED_IMAGE_MIME_TYPES = [
+	"image/jpeg",
+	"image/jpg",
+	"image/png",
+	"image/webp"
+];
+function validateUploadImageFile(file) {
+	const mime = (file.type || "").toLowerCase().trim();
+	if (!ALLOWED_IMAGE_MIME_TYPES.includes(mime)) return "Please upload a PNG, JPG, or WEBP image file.";
+	if (typeof file.size !== "number" || file.size <= 0) return "Selected image file appears empty.";
+	if (file.size > 15728640) return "Image file must be 15 MB or smaller before compression.";
+	return null;
 }
-/**
-* Returns the previous UTC calendar date string (YYYY-MM-DD).
-*/
-function getPreviousUtcDateKey(date = /* @__PURE__ */ new Date()) {
-	return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - 1)).toISOString().slice(0, 10);
-}
-function getDailyLoginStatus(profile, now = /* @__PURE__ */ new Date()) {
-	const todayKey = getUtcDateKey(now);
-	const yesterdayKey = getPreviousUtcDateKey(now);
-	if (!profile) return {
-		todayKey,
-		claimedToday: false,
-		canClaim: false,
-		currentStreak: 0,
-		nextStreak: 1,
-		reason: "Sign in to claim your daily +10 Spider Coins."
+function fitImageDimensions(sourceWidth, sourceHeight, maxWidth = 800, maxHeight = 450) {
+	if (sourceWidth <= 0 || sourceHeight <= 0) return {
+		width: maxWidth,
+		height: maxHeight
 	};
-	const lastDate = profile.lastDailyClaimDate;
-	const rawStreak = typeof profile.dailyClaimStreak === "number" && profile.dailyClaimStreak > 0 ? Math.floor(profile.dailyClaimStreak) : 0;
-	if (lastDate === todayKey) return {
-		todayKey,
-		claimedToday: true,
-		canClaim: false,
-		currentStreak: Math.max(1, rawStreak),
-		nextStreak: Math.max(1, rawStreak),
-		reason: "Already claimed today. Come back tomorrow (UTC) for +10 more coins."
-	};
-	const isConsecutive = lastDate === yesterdayKey;
-	const currentStreak = isConsecutive ? rawStreak : 0;
-	const nextStreak = isConsecutive ? rawStreak + 1 : 1;
-	if (profile.suspended) return {
-		todayKey,
-		claimedToday: false,
-		canClaim: false,
-		currentStreak,
-		nextStreak,
-		reason: "Account suspended — daily rewards are paused."
-	};
+	const scale = Math.min(1, maxWidth / sourceWidth, maxHeight / sourceHeight);
 	return {
-		todayKey,
-		claimedToday: false,
-		canClaim: true,
-		currentStreak,
-		nextStreak
+		width: Math.max(1, Math.round(sourceWidth * scale)),
+		height: Math.max(1, Math.round(sourceHeight * scale))
 	};
+}
+function isValidImageDataUrl(value) {
+	if (!value.startsWith("data:image/")) return false;
+	return /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(value);
+}
+function estimateDataUrlSizeKb(dataUrl) {
+	const commaIdx = dataUrl.indexOf(",");
+	if (commaIdx === -1) return 0;
+	const base64Len = dataUrl.length - commaIdx - 1;
+	const bytes = Math.floor(base64Len * 3 / 4);
+	return Math.max(1, Math.round(bytes / 1024));
+}
+async function decodeImageSource(file) {
+	if (typeof createImageBitmap === "function") {
+		const bitmap = await createImageBitmap(file);
+		return {
+			width: bitmap.width,
+			height: bitmap.height,
+			draw: (ctx, w, h) => ctx.drawImage(bitmap, 0, 0, w, h),
+			cleanup: () => bitmap.close()
+		};
+	}
+	const objectUrl = URL.createObjectURL(file);
+	try {
+		const img = await new Promise((resolve, reject) => {
+			const el = new Image();
+			el.onload = () => resolve(el);
+			el.onerror = () => reject(/* @__PURE__ */ new Error("Unable to read image file."));
+			el.src = objectUrl;
+		});
+		return {
+			width: img.naturalWidth || img.width,
+			height: img.naturalHeight || img.height,
+			draw: (ctx, w, h) => ctx.drawImage(img, 0, 0, w, h),
+			cleanup: () => URL.revokeObjectURL(objectUrl)
+		};
+	} catch (err) {
+		URL.revokeObjectURL(objectUrl);
+		throw err;
+	}
+}
+async function compressImageFileToDataUrl(file) {
+	const validationError = validateUploadImageFile(file);
+	if (validationError) throw new Error(validationError);
+	const decoded = await decodeImageSource(file);
+	try {
+		const canvas = document.createElement("canvas");
+		const ctx = canvas.getContext("2d");
+		if (!ctx) throw new Error("Browser canvas unavailable for image compression.");
+		const sizeSteps = [
+			[800, 450],
+			[640, 360],
+			[480, 270]
+		];
+		const qualitySteps = [
+			.84,
+			.74,
+			.62,
+			.5
+		];
+		for (const [maxW, maxH] of sizeSteps) {
+			const fitted = fitImageDimensions(decoded.width, decoded.height, maxW, maxH);
+			canvas.width = fitted.width;
+			canvas.height = fitted.height;
+			ctx.fillStyle = "#09090B";
+			ctx.fillRect(0, 0, fitted.width, fitted.height);
+			decoded.draw(ctx, fitted.width, fitted.height);
+			for (const quality of qualitySteps) {
+				const dataUrl = canvas.toDataURL("image/jpeg", quality);
+				if (dataUrl.length <= 16e4) return {
+					dataUrl,
+					width: fitted.width,
+					height: fitted.height,
+					approxKb: estimateDataUrlSizeKb(dataUrl)
+				};
+			}
+		}
+		throw new Error("Image is still too large after compression. Try a smaller photo.");
+	} finally {
+		decoded.cleanup();
+	}
 }
 // src/utils/tournamentRules.ts
 var TOURNAMENT_MODES = {
@@ -50404,10 +50467,11 @@ function validateAdminPassword(password, confirmPassword) {
 	if (typeof confirmPassword === "string" && password !== confirmPassword) return "Passwords do not match.";
 	return null;
 }
+var MAX_TOURNAMENT_SLOTS = 1e6;
 function validateAdminSlotUpdate(maxSlots, filledSlots) {
-	if (!Number.isInteger(maxSlots) || maxSlots < 2 || maxSlots > 100) return {
+	if (!Number.isInteger(maxSlots) || maxSlots < 2 || maxSlots > 1e6) return {
 		valid: false,
-		error: "Max slots must be a whole number between 2 and 100."
+		error: `Max slots must be a whole number of at least 2 (up to ${MAX_TOURNAMENT_SLOTS.toLocaleString()}).`
 	};
 	if (!Number.isInteger(filledSlots) || filledSlots < 0) return {
 		valid: false,
@@ -50428,9 +50492,9 @@ function validateSlotAssignment(slotNumber, maxSlots) {
 		valid: false,
 		error: "Slot number must be at least 1."
 	};
-	if (!Number.isInteger(maxSlots) || maxSlots < 2 || maxSlots > 100) return {
+	if (!Number.isInteger(maxSlots) || maxSlots < 2 || maxSlots > 1e6) return {
 		valid: false,
-		error: "Tournament max slots must be between 2 and 100."
+		error: `Tournament max slots must be between 2 and ${MAX_TOURNAMENT_SLOTS.toLocaleString()}.`
 	};
 	if (slotNumber > maxSlots) return {
 		valid: false,
@@ -50445,15 +50509,29 @@ function validateTournamentBannerUrl(rawUrl) {
 	const trimmed = rawUrl.trim();
 	if (!trimmed) return {
 		valid: false,
-		error: "Please select a match picture preset or enter an image URL."
+		error: "Please upload a match picture or select a preset."
 	};
-	if (trimmed.length > 300) return {
+	if (trimmed.length > 2e5) return {
+		valid: false,
+		error: "Uploaded match image is too large. Please upload a smaller photo."
+	};
+	if (trimmed.startsWith("data:")) {
+		if (!isValidImageDataUrl(trimmed)) return {
+			valid: false,
+			error: "Uploaded image must be a valid PNG, JPG, or WEBP photo."
+		};
+		return {
+			valid: true,
+			bannerUrl: trimmed
+		};
+	}
+	if (!trimmed.startsWith("/src/assets/") && !trimmed.startsWith("/assets/") && !trimmed.startsWith("https://") && !trimmed.startsWith("http://")) return {
+		valid: false,
+		error: "Match picture must be an uploaded image, built-in preset, or valid image URL."
+	};
+	if (!trimmed.startsWith("data:") && trimmed.length > 300) return {
 		valid: false,
 		error: "Match picture URL must be 300 characters or less."
-	};
-	if (!trimmed.startsWith("/src/assets/") && !trimmed.startsWith("https://") && !trimmed.startsWith("http://")) return {
-		valid: false,
-		error: "Match picture must be an https://, http://, or built-in /src/assets/ path."
 	};
 	return {
 		valid: true,
@@ -51024,53 +51102,6 @@ async function unlockRewardedAdCosmetic(params) {
 		});
 		return { alreadyUnlocked: false };
 	} catch (error) {
-		handleFirestoreError(error, OperationType.UPDATE, `users/${profile.uid}`);
-	}
-}
-async function claimDailyLoginBonus(profile) {
-	if (!auth.currentUser || !auth.currentUser.emailVerified) throw new Error("Please verify your email address in your Profile before claiming daily login coins.");
-	if (profile.suspended) throw new Error("Suspended accounts cannot claim daily login bonuses.");
-	const userRef = doc(db, "users", profile.uid);
-	const lbRef = doc(db, "leaderboards", profile.uid);
-	try {
-		return await runTransaction(db, async (tx) => {
-			const [userSnap, lbSnap] = await Promise.all([tx.get(userRef), tx.get(lbRef)]);
-			if (!userSnap.exists()) throw new Error("Player profile not found.");
-			const userData = userSnap.data();
-			const status = getDailyLoginStatus({
-				suspended: Boolean(userData.suspended),
-				lastDailyClaimDate: typeof userData.lastDailyClaimDate === "string" ? userData.lastDailyClaimDate : void 0,
-				dailyClaimStreak: typeof userData.dailyClaimStreak === "number" ? userData.dailyClaimStreak : 0
-			});
-			if (!status.canClaim) throw new Error(status.reason || "Daily login bonus already claimed today.");
-			const nextCoins = (typeof userData.coins === "number" ? userData.coins : profile.coins) + 10;
-			const nextAchievements = evaluateUnlockedAchievements({
-				tournamentsJoined: typeof userData.tournamentsJoined === "number" ? userData.tournamentsJoined : profile.tournamentsJoined,
-				totalKills: typeof userData.totalKills === "number" ? userData.totalKills : profile.totalKills,
-				totalWins: typeof userData.totalWins === "number" ? userData.totalWins : profile.totalWins,
-				coins: nextCoins,
-				achievements: Array.isArray(userData.achievements) ? userData.achievements : profile.achievements
-			});
-			tx.update(userRef, {
-				coins: nextCoins,
-				lastDailyClaimDate: status.todayKey,
-				lastDailyClaimAt: serverTimestamp(),
-				dailyClaimStreak: status.nextStreak,
-				achievements: nextAchievements,
-				updatedAt: serverTimestamp()
-			});
-			if (lbSnap.exists()) tx.update(lbRef, {
-				coins: nextCoins,
-				updatedAt: serverTimestamp()
-			});
-			return {
-				coinsAwarded: 10,
-				nextCoins,
-				nextStreak: status.nextStreak
-			};
-		});
-	} catch (error) {
-		if (error instanceof Error && !error.message.toLowerCase().includes("permission")) throw error;
 		handleFirestoreError(error, OperationType.UPDATE, `users/${profile.uid}`);
 	}
 }
@@ -52358,44 +52389,6 @@ var FileText = createLucideIcon("file-text", [
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var Flame = createLucideIcon("flame", [["path", {
-	d: "M12 3q1 4 4 6.5t3 5.5a1 1 0 0 1-14 0 5 5 0 0 1 1-3 1 1 0 0 0 5 0c0-2-1.5-3-1.5-5q0-2 2.5-4",
-	key: "1slcih"
-}]]);
-/**
-* @license lucide-react v0.546.0 - ISC
-*
-* This source code is licensed under the ISC license.
-* See the LICENSE file in the root directory of this source tree.
-*/
-var Gift = createLucideIcon("gift", [
-	["rect", {
-		x: "3",
-		y: "8",
-		width: "18",
-		height: "4",
-		rx: "1",
-		key: "bkv52"
-	}],
-	["path", {
-		d: "M12 8v13",
-		key: "1c76mn"
-	}],
-	["path", {
-		d: "M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7",
-		key: "6wjy6b"
-	}],
-	["path", {
-		d: "M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5",
-		key: "1ihvrl"
-	}]
-]);
-/**
-* @license lucide-react v0.546.0 - ISC
-*
-* This source code is licensed under the ISC license.
-* See the LICENSE file in the root directory of this source tree.
-*/
 var History = createLucideIcon("history", [
 	["path", {
 		d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8",
@@ -52980,6 +52973,26 @@ var Trophy = createLucideIcon("trophy", [
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
+var Upload = createLucideIcon("upload", [
+	["path", {
+		d: "M12 3v12",
+		key: "1x0j5s"
+	}],
+	["path", {
+		d: "m17 8-5-5-5 5",
+		key: "7q97r8"
+	}],
+	["path", {
+		d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4",
+		key: "ih7n3h"
+	}]
+]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
 var UserCheck = createLucideIcon("user-check", [
 	["path", {
 		d: "m16 11 2 2 4-4",
@@ -53226,7 +53239,7 @@ function TournamentCard({ tournament, isRegistered, onSelect }) {
 			className: "relative aspect-video bg-[#18181D] overflow-hidden",
 			children: [
 				!imgError ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
-					src: tournament.bannerUrl || fallbackImg,
+					src: resolveBundledAssetUrl(tournament.bannerUrl, fallbackImg),
 					alt: `${tournament.title} arena banner`,
 					referrerPolicy: "no-referrer",
 					onError: () => setImgError(true),
@@ -53774,7 +53787,7 @@ var __vitePreload = function preload(baseModule, deps, importerUrl) {
 		return baseModule().catch(handlePreloadError);
 	});
 };
-var AdMob = registerPlugin("AdMob", { web: () => __vitePreload(() => import("./web-C-XixrI9.js").then((m) => new m.AdMobWeb()), []) });
+var AdMob = registerPlugin("AdMob", { web: () => __vitePreload(() => import("./web-DMisIAaR.js").then((m) => new m.AdMobWeb()), []) });
 // src/lib/admobBridge.ts
 var AD_TIMEOUT_MS = 12e3;
 var STATUS_LISTENERS = /* @__PURE__ */ new Set();
@@ -54441,37 +54454,9 @@ function AdMobBannerSlot({ settings, screen = "home", placementLabel = "Arena Sp
 	});
 }
 // src/components/HomeView.tsx
-function HomeView({ profile, isSignedIn, isEmailVerified, tournaments, results, announcements, leaderboard, registeredTournamentIds, adminSettings, consentAccepted, onAcceptConsent, onAfterDailyClaim, onSelectTournament, onNavigateTab, onOpenAuth, onToast }) {
+function HomeView({ profile, isSignedIn, isEmailVerified: _isEmailVerified, tournaments, results, announcements, leaderboard, registeredTournamentIds, adminSettings, consentAccepted, onAcceptConsent, onSelectTournament, onNavigateTab, onOpenAuth, onToast: _onToast }) {
 	const [avatarError, setAvatarError] = (0, import_react.useState)(false);
 	const [heroImgError, setHeroImgError] = (0, import_react.useState)(false);
-	const [claimingDaily, setClaimingDaily] = (0, import_react.useState)(false);
-	const [dailyError, setDailyError] = (0, import_react.useState)(null);
-	const dailyStatus = getDailyLoginStatus(profile);
-	const handleClaimDailyBonus = async () => {
-		setDailyError(null);
-		if (!isSignedIn || !profile) {
-			onOpenAuth();
-			return;
-		}
-		if (!isEmailVerified) {
-			onToast("Verify your email address in Profile first to claim daily login coins.");
-			onNavigateTab("profile");
-			return;
-		}
-		if (!dailyStatus.canClaim || claimingDaily) return;
-		setClaimingDaily(true);
-		try {
-			const res = await claimDailyLoginBonus(profile);
-			onToast(`+${res.coinsAwarded} Daily Login Spider Coins claimed! Streak: ${res.nextStreak} day${res.nextStreak === 1 ? "" : "s"}.`);
-			onAfterDailyClaim?.();
-		} catch (err) {
-			const message = err instanceof Error ? err.message : "Unable to claim daily login bonus right now.";
-			setDailyError(message);
-			onToast(message);
-		} finally {
-			setClaimingDaily(false);
-		}
-	};
 	const featured = tournaments.find((t) => t.featured && t.status !== "cancelled") || tournaments.find((t) => t.status === "upcoming") || tournaments[0];
 	(0, import_react.useEffect)(() => {
 		setHeroImgError(false);
@@ -54491,7 +54476,7 @@ function HomeView({ profile, isSignedIn, isEmailVerified, tournaments, results, 
 					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						className: "w-12 h-12 rounded-xl overflow-hidden border border-white/15 bg-[#121216] shrink-0 flex items-center justify-center",
 						children: !avatarError ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
-							src: profile?.avatarUrl || BRAND_ASSETS.defaultAvatar,
+							src: resolveBundledAssetUrl(profile?.avatarUrl, BRAND_ASSETS.defaultAvatar),
 							alt: profile?.username || "Player Avatar",
 							referrerPolicy: "no-referrer",
 							onError: () => setAvatarError(true),
@@ -54552,61 +54537,6 @@ function HomeView({ profile, isSignedIn, isEmailVerified, tournaments, results, 
 					})
 				})]
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
-				"aria-label": "Daily Login Bonus",
-				"data-testid": "daily-login-card",
-				className: "rounded-xl border border-amber-500/25 bg-[#121216] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "flex items-start sm:items-center gap-3.5",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "w-11 h-11 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Gift, { className: "w-5 h-5 text-amber-400" })
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "space-y-1",
-						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "flex flex-wrap items-center gap-2",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
-									className: "font-display text-lg font-bold text-white",
-									children: [
-										"Daily Login Reward: +",
-										10,
-										" Spider Coins"
-									]
-								}), isSignedIn && dailyStatus.currentStreak > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-									className: "inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-300 tabular-nums",
-									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Flame, { className: "w-3 h-3" }),
-										dailyStatus.currentStreak,
-										"d Streak"
-									]
-								})]
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-								className: "text-xs text-zinc-400",
-								children: !isSignedIn ? "Sign in to claim +10 free Spider Coins every day toward ₹10 UPI/Bank withdrawals (1,000 Coins = ₹10)." : dailyStatus.claimedToday ? `Claimed today (${dailyStatus.todayKey} UTC). Come back tomorrow for +10 more Spider Coins.` : dailyStatus.reason || "Tap Claim to collect your daily +10 Spider Coins instantly."
-							}),
-							dailyError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-								role: "alert",
-								className: "text-xs text-[#FB7185] font-medium",
-								children: dailyError
-							})
-						]
-					})]
-				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-					type: "button",
-					"data-testid": "daily-login-claim-btn",
-					disabled: claimingDaily || isSignedIn && isEmailVerified && !dailyStatus.canClaim,
-					onClick: () => void handleClaimDailyBonus(),
-					className: `min-h-[44px] px-5 py-2.5 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-2 shrink-0 transition-colors ${!isSignedIn || !isEmailVerified ? "bg-[#E11D48] hover:bg-[#F43F5E] text-white" : dailyStatus.claimedToday ? "bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 cursor-default" : dailyStatus.canClaim ? "bg-amber-500 hover:bg-amber-400 text-black" : "bg-zinc-800 text-zinc-400 cursor-not-allowed"}`,
-					children: dailyStatus.claimedToday ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleCheck, { className: "w-4 h-4 text-emerald-400" }),
-						"Claimed Today (+",
-						10,
-						")"
-					] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Coins, { className: "w-4 h-4" }), !isSignedIn ? `Sign In · Claim +10` : !isEmailVerified ? "Verify Email to Claim" : claimingDaily ? "Claiming..." : `Claim Daily +10 Coins`] })
-				})]
-			}),
 			featured && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("section", {
 				"aria-label": "Featured Tournament",
 				className: "rounded-2xl border border-white/10 bg-[#121216] overflow-hidden",
@@ -54615,7 +54545,7 @@ function HomeView({ profile, isSignedIn, isEmailVerified, tournaments, results, 
 					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "lg:col-span-7 relative min-h-[240px] lg:min-h-[340px] bg-[#18181D]",
 						children: [!heroImgError ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
-							src: featured.bannerUrl || BRAND_ASSETS.battleRoyaleBanner,
+							src: resolveBundledAssetUrl(featured.bannerUrl, BRAND_ASSETS.battleRoyaleBanner),
 							alt: featured.title,
 							referrerPolicy: "no-referrer",
 							onError: () => setHeroImgError(true),
@@ -55851,7 +55781,7 @@ function LeaderboardView({ entries, results, currentUserId, adminSettings, onNav
 										children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 											className: "flex items-center gap-3",
 											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
-												src: entry.avatarUrl || BRAND_ASSETS.defaultAvatar,
+												src: resolveBundledAssetUrl(entry.avatarUrl, BRAND_ASSETS.defaultAvatar),
 												alt: entry.username,
 												referrerPolicy: "no-referrer",
 												className: "w-8 h-8 rounded-lg object-cover border border-white/10 shrink-0"
@@ -56339,7 +56269,7 @@ function WithdrawalHistoryModal({ open, withdrawals, availableCoins, initialFilt
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Wallet, { className: "w-5 h-5 text-amber-400" }), "Withdrawal History"]
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "text-xs text-zinc-400",
-							children: "Detailed status of your Spider Coin redemption requests (1,000 Coins = ₹10)."
+							children: "Detailed status of your Spider Coin redemption requests (100 Coins = ₹10)."
 						})]
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "flex items-center gap-2 shrink-0",
@@ -56467,7 +56397,7 @@ function WithdrawalHistoryModal({ open, withdrawals, availableCoins, initialFilt
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 								className: "text-xs text-zinc-400 max-w-md mx-auto",
-								children: "Earn at least 1,000 Spider Coins (₹10) from free Fire tournaments, then submit a UPI or Bank payout request from your Profile wallet."
+								children: "Earn at least 100 Spider Coins (₹10) from free Fire tournaments, then submit a UPI or Bank payout request from your Profile wallet."
 							})
 						]
 					}) : visibleWithdrawals.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -56626,7 +56556,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 	const [savingPassword, setSavingPassword] = (0, import_react.useState)(false);
 	const [watchingRewardAd, setWatchingRewardAd] = (0, import_react.useState)(false);
 	const [rewardAdError, setRewardAdError] = (0, import_react.useState)(null);
-	const [withdrawCoins, setWithdrawCoins] = (0, import_react.useState)(MIN_WITHDRAWAL_COINS);
+	const [withdrawCoins, setWithdrawCoins] = (0, import_react.useState)(100);
 	const [withdrawMethod, setWithdrawMethod] = (0, import_react.useState)("upi");
 	const [withdrawDest, setWithdrawDest] = (0, import_react.useState)("");
 	const [withdrawError, setWithdrawError] = (0, import_react.useState)(null);
@@ -56651,7 +56581,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 	const rank = profile ? getPlayerLeaderboardRank(leaderboard, profile.uid, "global") : null;
 	const userCoins = profile?.coins ?? 0;
 	const walletRupees = calculateRupeesFromCoins(userCoins);
-	const thresholdPercent = Math.min(100, Math.round(userCoins / MIN_WITHDRAWAL_COINS * 100));
+	const thresholdPercent = Math.min(100, Math.round(userCoins / 100 * 100));
 	const previewPayout = calculateRupeesFromCoins(Number.isFinite(withdrawCoins) ? withdrawCoins : 0);
 	const themeAccentClass = profile?.activeTheme === "crimson-grid" ? "border-[#E11D48]/60" : profile?.activeTheme === "arachnid-gold" ? "border-amber-500/60" : profile?.activeTheme === "stealth-carbon" ? "border-zinc-500/60" : "border-white/10";
 	const handleSaveIdentity = async (e) => {
@@ -56785,7 +56715,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 				destination: validation.destination
 			});
 			setWithdrawDest("");
-			setWithdrawCoins(MIN_WITHDRAWAL_COINS);
+			setWithdrawCoins(100);
 			onToast(`Withdrawal requested: ${formatRupees(validation.rupees)} (${validation.coins.toLocaleString()} coins).`);
 		} catch (err) {
 			setWithdrawError(err instanceof Error ? err.message : "Unable to submit withdrawal.");
@@ -56857,7 +56787,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 						className: "text-sm text-zinc-400 max-w-lg mx-auto",
-						children: "Register with your unique username and Free Fire UID to join free community tournaments, earn Spider Coins from playing, kills, and wins (1,000 Coins = ₹10), and climb the global ladder."
+						children: "Register with your unique username and Free Fire UID to join free community tournaments, earn Spider Coins from playing, kills, and wins (100 Coins = ₹10), and climb the global ladder."
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 						type: "button",
@@ -56905,7 +56835,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								className: "flex items-center gap-4",
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
-									src: profile.avatarUrl || BRAND_ASSETS.defaultAvatar,
+									src: resolveBundledAssetUrl(profile.avatarUrl, BRAND_ASSETS.defaultAvatar),
 									alt: profile.username,
 									referrerPolicy: "no-referrer",
 									className: "w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border border-white/15 shrink-0"
@@ -57041,7 +56971,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 									]
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 									className: "text-zinc-400",
-									children: userCoins >= 1e3 ? "Withdrawal unlocked · 1,000 Coins = ₹10" : `${(MIN_WITHDRAWAL_COINS - userCoins).toLocaleString()} more coins to unlock ₹10 withdrawal`
+									children: userCoins >= 100 ? "Withdrawal unlocked · 100 Coins = ₹10" : `${(100 - userCoins).toLocaleString()} more coins to unlock ₹10 withdrawal`
 								})]
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 								className: "h-2 w-full rounded-full bg-zinc-800 overflow-hidden",
@@ -57111,7 +57041,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("strong", {
 											className: "text-white",
 											children: [
-												COINS_PER_10_INR.toLocaleString(),
+												100 .toLocaleString(),
 												" Coins = ₹",
 												10
 											]
@@ -57132,9 +57062,9 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 								className: "flex flex-wrap gap-2",
 								children: [
-									1e3,
-									2500,
-									5e3
+									100,
+									250,
+									500
 								].map((preset) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 									type: "button",
 									disabled: userCoins < preset,
@@ -57153,12 +57083,12 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
 									htmlFor: "wd-coins",
 									className: "block text-xs text-zinc-300 mb-1",
-									children: "Coins to Withdraw (Min 1,000)"
+									children: "Coins to Withdraw (Min 100)"
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
 									id: "wd-coins",
 									type: "number",
-									min: MIN_WITHDRAWAL_COINS,
-									max: Math.max(MIN_WITHDRAWAL_COINS, userCoins),
+									min: 100,
+									max: Math.max(100, userCoins),
 									step: 1,
 									required: true,
 									value: withdrawCoins,
@@ -57212,9 +57142,9 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 								type: "submit",
-								disabled: submittingWithdraw || userCoins < 1e3 || profile.suspended,
+								disabled: submittingWithdraw || userCoins < 100 || profile.suspended,
 								className: "w-full min-h-[46px] rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] disabled:opacity-45 disabled:cursor-not-allowed text-xs font-semibold text-white transition-colors",
-								children: submittingWithdraw ? "Submitting Request..." : userCoins < 1e3 ? `Need ${MIN_WITHDRAWAL_COINS.toLocaleString()} Coins (₹10) to Withdraw` : `Request ${formatRupees(previewPayout)} Withdrawal`
+								children: submittingWithdraw ? "Submitting Request..." : userCoins < 100 ? `Need ${100 .toLocaleString()} Coins (₹10) to Withdraw` : `Request ${formatRupees(previewPayout)} Withdrawal`
 							})
 						]
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -57231,7 +57161,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 									]
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 									className: "text-[11px] text-zinc-400",
-									children: "1,000 Coins = ₹10 · Click any request or open modal for full details"
+									children: "100 Coins = ₹10 · Click any request or open modal for full details"
 								})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 									type: "button",
 									onClick: () => openHistoryModal("all"),
@@ -57696,7 +57626,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "font-semibold text-white",
 							children: "Terms & Conditions"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "SPIDER ESPORTS hosts strictly free-to-play community tournaments with zero entry fees, zero deposits, and zero paid participation. Players earn Spider Coins exclusively through verified gameplay (playing, kills, and wins) credited by administrators, redeemable at 1,000 Spider Coins = ₹10." })]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "SPIDER ESPORTS hosts strictly free-to-play community tournaments with zero entry fees, zero deposits, and zero paid participation. Players earn Spider Coins exclusively through verified gameplay (playing, kills, and wins) credited by administrators, redeemable at 100 Spider Coins = ₹10." })]
 					}),
 					legalDoc === "playstore" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "rounded-lg bg-[#09090B] border border-white/10 p-4 text-xs text-zinc-300 space-y-2 leading-relaxed",
@@ -57709,7 +57639,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Single Currency: Spider Coins are the only redeemable reward unit in SPIDER ESPORTS." }),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Earning Rules: Coins are credited strictly by admins for verified match play, eliminations, and tournament wins." }),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Ad Policy: Rewarded ads never grant Spider Coins, cash, prizes, or tournament entry — only optional non-cash profile emblems." }),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Conversion Rate: 1,000 Spider Coins = ₹10 (minimum withdrawal: 1,000 Coins)." }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Conversion Rate: 100 Spider Coins = ₹10 (minimum withdrawal: 100 Coins)." }),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Verification: Admins verify match results and withdrawal payout details (UPI / Bank) before approval." })
 							]
 						})]
@@ -57780,6 +57710,9 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 	const [savingSlotId, setSavingSlotId] = (0, import_react.useState)(null);
 	const [bannerDrafts, setBannerDrafts] = (0, import_react.useState)({});
 	const [savingBannerId, setSavingBannerId] = (0, import_react.useState)(null);
+	const [uploadingFormBanner, setUploadingFormBanner] = (0, import_react.useState)(false);
+	const [formBannerError, setFormBannerError] = (0, import_react.useState)(null);
+	const [uploadingInlineBannerId, setUploadingInlineBannerId] = (0, import_react.useState)(null);
 	const [regSlotDrafts, setRegSlotDrafts] = (0, import_react.useState)({});
 	const [savingRegSlotId, setSavingRegSlotId] = (0, import_react.useState)(null);
 	const [coinDrafts, setCoinDrafts] = (0, import_react.useState)({});
@@ -57850,7 +57783,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 		});
 		setBannerDrafts(() => {
 			const next = {};
-			for (const t of tournaments) next[t.id] = t.bannerUrl || (t.category === "Clash Squad" ? BRAND_ASSETS.clashSquadBanner : t.category === "Lone Wolf" ? BRAND_ASSETS.loneWolfBanner : BRAND_ASSETS.battleRoyaleBanner);
+			for (const t of tournaments) next[t.id] = resolveBundledAssetUrl(t.bannerUrl, t.category === "Clash Squad" ? BRAND_ASSETS.clashSquadBanner : t.category === "Lone Wolf" ? BRAND_ASSETS.loneWolfBanner : BRAND_ASSETS.battleRoyaleBanner);
 			return next;
 		});
 	}, [tournaments]);
@@ -57943,7 +57876,8 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 		setReleaseLocal(t.credentialsReleaseAt.slice(0, 16));
 		setMaxSlots(t.maxSlots);
 		setFilledSlots(t.filledSlots);
-		setBannerUrl(t.bannerUrl || getDefaultCategoryBanner(t.category));
+		setBannerUrl(resolveBundledAssetUrl(t.bannerUrl, getDefaultCategoryBanner(t.category)));
+		setFormBannerError(null);
 		setCoinReward(t.coinReward);
 		setPerKillCoins(t.perKillCoins);
 		setStatus(t.status);
@@ -58008,6 +57942,43 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 			onToast(err instanceof Error ? err.message : "Unable to update slots.");
 		} finally {
 			setSavingSlotId(null);
+		}
+	};
+	const handleFormBannerUpload = async (e) => {
+		const file = e.target.files?.[0];
+		e.target.value = "";
+		if (!file) return;
+		setFormBannerError(null);
+		setUploadingFormBanner(true);
+		try {
+			const result = await compressImageFileToDataUrl(file);
+			setBannerUrl(result.dataUrl);
+			onToast(`Image uploaded (${result.width}x${result.height}, ~${result.approxKb} KB).`);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : "Unable to process selected image.";
+			setFormBannerError(msg);
+			onToast(msg);
+		} finally {
+			setUploadingFormBanner(false);
+		}
+	};
+	const handleInlineBannerUpload = async (tournament, e) => {
+		const file = e.target.files?.[0];
+		e.target.value = "";
+		if (!file) return;
+		setUploadingInlineBannerId(tournament.id);
+		try {
+			const result = await compressImageFileToDataUrl(file);
+			setBannerDrafts((prev) => ({
+				...prev,
+				[tournament.id]: result.dataUrl
+			}));
+			await adminUpdateTournamentBanner(tournament.id, result.dataUrl);
+			onToast(`Uploaded & saved match picture for ${tournament.title} (~${result.approxKb} KB).`);
+		} catch (err) {
+			onToast(err instanceof Error ? err.message : "Unable to upload match picture.");
+		} finally {
+			setUploadingInlineBannerId(null);
 		}
 	};
 	const handleInlineBannerSave = async (tournament) => {
@@ -58384,7 +58355,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 								id: "adm-slots",
 								type: "number",
 								min: editingId ? Math.max(2, filledSlots) : 2,
-								max: 100,
+								max: 1e6,
 								value: maxSlots,
 								onChange: (e) => setMaxSlots(Number(e.target.value)),
 								className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
@@ -58398,24 +58369,41 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 							className: "rounded-lg border border-white/10 bg-[#09090B] p-3 space-y-2.5",
 							children: [
 								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "flex items-center justify-between",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
-										htmlFor: "adm-banner-url",
+									className: "flex items-center justify-between gap-2",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 										className: "text-xs font-medium text-zinc-200 flex items-center gap-1.5",
 										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Image$1, { className: "w-3.5 h-3.5 text-[#E11D48]" }), "Match Picture"]
 									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-										className: "text-[11px] text-zinc-500",
-										children: "Preset or https:// URL"
+										className: "text-[11px] text-zinc-400",
+										children: bannerUrl.startsWith("data:image/") ? `Uploaded photo (~${estimateDataUrlSizeKb(bannerUrl)} KB)` : MATCH_BANNER_PRESETS.find((p) => p.url === bannerUrl)?.label || "Custom image"
 									})]
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 									className: "aspect-video w-full rounded-md overflow-hidden border border-white/10 bg-[#121216]",
 									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
-										src: bannerUrl || getDefaultCategoryBanner(category),
+										src: resolveBundledAssetUrl(bannerUrl, getDefaultCategoryBanner(category)),
 										alt: "Match banner preview",
 										referrerPolicy: "no-referrer",
 										className: "w-full h-full object-cover"
 									})
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+									htmlFor: "adm-banner-upload",
+									className: `min-h-[42px] w-full px-3 py-2 rounded-lg border border-dashed border-[#E11D48]/60 bg-[#121216] hover:bg-[#18181D] text-xs font-semibold text-white flex items-center justify-center gap-2 cursor-pointer transition-colors ${uploadingFormBanner ? "opacity-60 pointer-events-none" : ""}`,
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Upload, { className: "w-4 h-4 text-[#F43F5E]" }), uploadingFormBanner ? "Compressing & Preparing Image..." : "Upload Match Image (PNG / JPG / WEBP)"]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+									id: "adm-banner-upload",
+									type: "file",
+									accept: "image/png,image/jpeg,image/webp",
+									disabled: uploadingFormBanner,
+									onChange: (e) => void handleFormBannerUpload(e),
+									className: "sr-only"
+								}),
+								formBannerError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									role: "alert",
+									className: "text-[11px] text-[#FB7185] font-medium",
+									children: formBannerError
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 									className: "grid grid-cols-2 gap-1.5",
@@ -58423,20 +58411,14 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 										const selected = bannerUrl === preset.url;
 										return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 											type: "button",
-											onClick: () => setBannerUrl(preset.url),
+											onClick: () => {
+												setFormBannerError(null);
+												setBannerUrl(preset.url);
+											},
 											className: `min-h-[34px] px-2.5 py-1 rounded text-[11px] font-medium text-left truncate border transition-colors ${selected ? "bg-[#E11D48]/20 border-[#E11D48] text-white" : "bg-[#121216] border-white/10 text-zinc-300 hover:text-white"}`,
 											children: preset.label
 										}, preset.id);
 									})
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-									id: "adm-banner-url",
-									type: "text",
-									maxLength: 300,
-									value: bannerUrl,
-									onChange: (e) => setBannerUrl(e.target.value),
-									placeholder: "https://... or select a preset above",
-									className: "w-full min-h-[38px] px-3 py-1.5 rounded-md border border-white/10 bg-[#121216] text-xs text-white"
 								})
 							]
 						}),
@@ -58605,9 +58587,10 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 						children: tournaments.map((t) => {
 							const draftMax = slotDrafts[t.id] ?? t.maxSlots;
 							const isSlotDirty = draftMax !== t.maxSlots;
-							const currentBanner = t.bannerUrl || getDefaultCategoryBanner(t.category);
+							const currentBanner = resolveBundledAssetUrl(t.bannerUrl, getDefaultCategoryBanner(t.category));
 							const draftBanner = bannerDrafts[t.id] ?? currentBanner;
 							const isBannerDirty = draftBanner.trim() !== currentBanner;
+							const isUploadingInline = uploadingInlineBannerId === t.id;
 							return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								className: "py-4 space-y-3",
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -58681,13 +58664,13 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 												id: `max-${t.id}`,
 												type: "number",
 												min: Math.max(2, t.filledSlots),
-												max: 100,
+												max: 1e6,
 												value: draftMax,
 												onChange: (e) => setSlotDrafts((prev) => ({
 													...prev,
 													[t.id]: Number(e.target.value)
 												})),
-												className: "w-20 min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs font-mono-tabular text-white"
+												className: "w-24 min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs font-mono-tabular text-white"
 											})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 												type: "button",
 												disabled: savingSlotId === t.id || !isSlotDirty,
@@ -58700,8 +58683,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 										className: "flex flex-col gap-1.5 rounded-lg bg-[#09090B] border border-white/10 p-2.5",
 										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 											className: "flex items-center justify-between gap-2",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
-												htmlFor: `pic-${t.id}`,
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 												className: "text-[11px] text-zinc-400 flex items-center gap-1",
 												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Image$1, { className: "w-3 h-3 text-[#E11D48]" }), "Match Picture"]
 											}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
@@ -58724,24 +58706,31 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 											})]
 										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 											className: "flex items-center gap-2",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-												id: `pic-${t.id}`,
-												type: "text",
-												maxLength: 300,
-												value: draftBanner,
-												onChange: (e) => setBannerDrafts((prev) => ({
-													...prev,
-													[t.id]: e.target.value
-												})),
-												placeholder: "https://...",
-												className: "min-w-0 flex-1 min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs text-white"
-											}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-												type: "button",
-												disabled: savingBannerId === t.id || !isBannerDirty,
-												onClick: () => void handleInlineBannerSave(t),
-												className: "min-h-[36px] px-3 py-1.5 rounded-md bg-[#E11D48] hover:bg-[#F43F5E] disabled:bg-zinc-800 disabled:text-zinc-500 text-xs font-semibold text-white shrink-0 transition-colors",
-												children: savingBannerId === t.id ? "Saving..." : "Save Pic"
-											})]
+											children: [
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+													htmlFor: `pic-upload-${t.id}`,
+													className: `min-w-0 flex-1 min-h-[36px] px-2.5 py-1.5 rounded-md border border-dashed border-[#E11D48]/50 bg-[#121216] hover:bg-[#18181D] text-xs font-medium text-zinc-200 inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${isUploadingInline ? "opacity-60 pointer-events-none" : ""}`,
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Upload, { className: "w-3.5 h-3.5 text-[#F43F5E] shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+														className: "truncate",
+														children: isUploadingInline ? "Uploading..." : "Upload Image"
+													})]
+												}),
+												/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+													id: `pic-upload-${t.id}`,
+													type: "file",
+													accept: "image/png,image/jpeg,image/webp",
+													disabled: isUploadingInline,
+													onChange: (e) => void handleInlineBannerUpload(t, e),
+													className: "sr-only"
+												}),
+												/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+													type: "button",
+													disabled: savingBannerId === t.id || !isBannerDirty,
+													onClick: () => void handleInlineBannerSave(t),
+													className: "min-h-[36px] px-3 py-1.5 rounded-md bg-[#E11D48] hover:bg-[#F43F5E] disabled:bg-zinc-800 disabled:text-zinc-500 text-xs font-semibold text-white shrink-0 transition-colors",
+													children: savingBannerId === t.id ? "Saving..." : "Save Pic"
+												})
+											]
 										})]
 									})]
 								})]
@@ -59314,7 +59303,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 								className: "text-xs text-zinc-400 py-3",
 								children: "No active registrations for this match."
 							}) : matchRegistrations.map((reg) => {
-								const maxBracketSlots = selectedTournament?.maxSlots ?? 100;
+								const maxBracketSlots = selectedTournament?.maxSlots ?? 1e6;
 								const draftSlot = regSlotDrafts[reg.id] ?? reg.slotNumber;
 								return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 									className: "py-3 space-y-2 text-xs",
@@ -59381,7 +59370,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 					className: "flex flex-col sm:flex-row sm:items-center justify-between gap-3",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
 						className: "font-display text-xl font-bold text-white flex items-center gap-2",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Wallet, { className: "w-5 h-5 text-amber-400" }), "Player Withdrawal Requests (1,000 Coins = ₹10)"]
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Wallet, { className: "w-5 h-5 text-amber-400" }), "Player Withdrawal Requests (100 Coins = ₹10)"]
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 						className: "text-xs text-zinc-400 mt-0.5",
 						children: "Approve paid payouts or reject to automatically refund Spider Coins to the player wallet."
@@ -60362,7 +60351,7 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 					className: "relative h-40 sm:h-48 rounded-xl overflow-hidden border border-white/10 bg-[#18181D]",
 					children: [
 						!bannerImgError ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
-							src: tournament.bannerUrl || fallbackBanner,
+							src: resolveBundledAssetUrl(tournament.bannerUrl, fallbackBanner),
 							alt: `${tournament.title} banner`,
 							referrerPolicy: "no-referrer",
 							onError: () => setBannerImgError(true),
@@ -61451,7 +61440,6 @@ function App() {
 						adminSettings,
 						consentAccepted,
 						onAcceptConsent: () => updateConsentPreference(true),
-						onAfterDailyClaim: () => maybeShowNaturalBreakInterstitial(true, true),
 						onSelectTournament: (t) => setSelectedTournamentId(t.id),
 						onNavigateTab: handleSelectTab,
 						onOpenAuth: () => setAuthModalOpen(true),
@@ -61520,7 +61508,7 @@ function App() {
 					className: "mt-12 pt-6 border-t border-white/10 text-xs text-zinc-500 flex flex-col sm:flex-row sm:items-center justify-between gap-2",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "SPIDER ESPORTS is an independent community tournament platform. It is not affiliated with, endorsed by, or sponsored by Garena or Free Fire." }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 						className: "shrink-0",
-						children: "100% Free Entry · 1,000 Coins = ₹10"
+						children: "100% Free Entry · 100 Coins = ₹10"
 					})]
 				})]
 			}),

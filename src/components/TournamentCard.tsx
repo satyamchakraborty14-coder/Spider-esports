@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Calendar, CheckCircle2, Clock, Shield, Users } from 'lucide-react';
 import type { Tournament } from '../types/esports';
-import { BRAND_ASSETS } from '../lib/seedData';
+import { BRAND_ASSETS, resolveBundledAssetUrl } from '../lib/seedData';
 import { getAvailableSlots, isTournamentFull } from '../utils/tournamentRules';
 
 interface TournamentCardProps {
@@ -44,7 +44,7 @@ export function TournamentCard({ tournament, isRegistered, onSelect }: Tournamen
       <div className="relative aspect-video bg-[#18181D] overflow-hidden">
         {!imgError ? (
           <img
-            src={tournament.bannerUrl || fallbackImg}
+            src={resolveBundledAssetUrl(tournament.bannerUrl, fallbackImg)}
             alt={`${tournament.title} arena banner`}
             referrerPolicy="no-referrer"
             onError={() => setImgError(true)}

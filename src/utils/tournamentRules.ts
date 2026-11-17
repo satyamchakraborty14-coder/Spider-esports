@@ -1,3 +1,7 @@
+import {
+  isValidImageDataUrl,
+  MAX_TOURNAMENT_BANNER_LENGTH,
+} from './imageUpload';
 import type {
   TeammateInput,
   Tournament,
@@ -277,12 +281,22 @@ export function validateAdminPassword(password: string, confirmPassword?: string
   return null;
 }
 
+export const MIN_TOURNAMENT_SLOTS = 2;
+export const MAX_TOURNAMENT_SLOTS = 1_000_000;
+
 export function validateAdminSlotUpdate(
   maxSlots: number,
   filledSlots: number
 ): { valid: true; maxSlots: number; filledSlots: number } | { valid: false; error: string } {
-  if (!Number.isInteger(maxSlots) || maxSlots < 2 || maxSlots > 100) {
-    return { valid: false, error: 'Max slots must be a whole number between 2 and 100.' };
+  if (
+    !Number.isInteger(maxSlots) ||
+    maxSlots < MIN_TOURNAMENT_SLOTS ||
+    maxSlots > MAX_TOURNAMENT_SLOTS
+  ) {
+    return {
+      valid: false,
+      error: `Max slots must be a whole number of at least ${MIN_TOURNAMENT_SLOTS} (up to ${MAX_TOURNAMENT_SLOTS.toLocaleString()}).`,
+    };
   }
   if (!Number.isInteger(filledSlots) || filledSlots < 0) {
     return { valid: false, error: 'Filled slots cannot be negative.' };
@@ -303,8 +317,15 @@ export function validateSlotAssignment(
   if (!Number.isInteger(slotNumber) || slotNumber < 1) {
     return { valid: false, error: 'Slot number must be at least 1.' };
   }
-  if (!Number.isInteger(maxSlots) || maxSlots < 2 || maxSlots > 100) {
-    return { valid: false, error: 'Tournament max slots must be between 2 and 100.' };
+  if (
+    !Number.isInteger(maxSlots) ||
+    maxSlots < MIN_TOURNAMENT_SLOTS ||
+    maxSlots > MAX_TOURNAMENT_SLOTS
+  ) {
+    return {
+      valid: false,
+      error: `Tournament max slots must be between ${MIN_TOURNAMENT_SLOTS} and ${MAX_TOURNAMENT_SLOTS.toLocaleString()}.`,
+    };
   }
   if (slotNumber > maxSlots) {
     return {
@@ -320,20 +341,36 @@ export function validateTournamentBannerUrl(
 ): { valid: true; bannerUrl: string } | { valid: false; error: string } {
   const trimmed = rawUrl.trim();
   if (!trimmed) {
-    return { valid: false, error: 'Please select a match picture preset or enter an image URL.' };
+    return { valid: false, error: 'Please upload a match picture or select a preset.' };
   }
-  if (trimmed.length > 300) {
-    return { valid: false, error: 'Match picture URL must be 300 characters or less.' };
+  if (trimmed.length > MAX_TOURNAMENT_BANNER_LENGTH) {
+    return {
+      valid: false,
+      error: 'Uploaded match image is too large. Please upload a smaller photo.',
+    };
+  }
+  if (trimmed.startsWith('data:')) {
+    if (!isValidImageDataUrl(trimmed)) {
+      return {
+        valid: false,
+        error: 'Uploaded image must be a valid PNG, JPG, or WEBP photo.',
+      };
+    }
+    return { valid: true, bannerUrl: trimmed };
   }
   if (
     !trimmed.startsWith('/src/assets/') &&
+    !trimmed.startsWith('/assets/') &&
     !trimmed.startsWith('https://') &&
     !trimmed.startsWith('http://')
   ) {
     return {
       valid: false,
-      error: 'Match picture must be an https://, http://, or built-in /src/assets/ path.',
+      error: 'Match picture must be an uploaded image, built-in preset, or valid image URL.',
     };
+  }
+  if (!trimmed.startsWith('data:') && trimmed.length > 300) {
+    return { valid: false, error: 'Match picture URL must be 300 characters or less.' };
   }
   return { valid: true, bannerUrl: trimmed };
 }

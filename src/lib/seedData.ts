@@ -7,13 +7,35 @@ import type {
   TournamentResult,
 } from '../types/esports';
 
+import logoFfImg from '../assets/images/spider_esports_logo_ff.png';
+import battleRoyaleBannerImg from '../assets/images/hero_arena_banner_1794723403097.jpg';
+import clashSquadBannerImg from '../assets/images/clash_squad_banner_1794723403367.jpg';
+import loneWolfBannerImg from '../assets/images/lone_wolf_banner_1794723403605.jpg';
+import defaultAvatarFfImg from '../assets/images/avatar_cyber_spider_ff.png';
+
 export const BRAND_ASSETS = {
-  logo: '/src/assets/images/spider_esports_logo_1794723402588.jpg',
-  battleRoyaleBanner: '/src/assets/images/hero_arena_banner_1794723403097.jpg',
-  clashSquadBanner: '/src/assets/images/clash_squad_banner_1794723403367.jpg',
-  loneWolfBanner: '/src/assets/images/lone_wolf_banner_1794723403605.jpg',
-  defaultAvatar: '/src/assets/images/avatar_cyber_spider_1794723403258.jpg',
+  logo: logoFfImg,
+  battleRoyaleBanner: battleRoyaleBannerImg,
+  clashSquadBanner: clashSquadBannerImg,
+  loneWolfBanner: loneWolfBannerImg,
+  defaultAvatar: defaultAvatarFfImg,
 };
+
+const LEGACY_ASSET_MAP: Record<string, string> = {
+  '/src/assets/images/spider_esports_logo_1794723402588.jpg': BRAND_ASSETS.logo,
+  '/src/assets/images/spider_esports_logo_ff.png': BRAND_ASSETS.logo,
+  '/src/assets/images/hero_arena_banner_1794723403097.jpg': BRAND_ASSETS.battleRoyaleBanner,
+  '/src/assets/images/clash_squad_banner_1794723403367.jpg': BRAND_ASSETS.clashSquadBanner,
+  '/src/assets/images/lone_wolf_banner_1794723403605.jpg': BRAND_ASSETS.loneWolfBanner,
+  '/src/assets/images/avatar_cyber_spider_1794723403258.jpg': BRAND_ASSETS.defaultAvatar,
+  '/src/assets/images/avatar_cyber_spider_ff.png': BRAND_ASSETS.defaultAvatar,
+};
+
+export function resolveBundledAssetUrl(url: string | null | undefined, fallback: string): string {
+  const trimmed = (url || '').trim();
+  if (!trimmed) return fallback;
+  return LEGACY_ASSET_MAP[trimmed] || trimmed;
+}
 
 export const MATCH_BANNER_PRESETS: { id: string; label: string; url: string }[] = [
   {
@@ -33,7 +55,7 @@ export const MATCH_BANNER_PRESETS: { id: string; label: string; url: string }[] 
   },
   {
     id: 'cyber-spider',
-    label: 'Cyber Spider Emblem',
+    label: 'FF Spider Character',
     url: BRAND_ASSETS.defaultAvatar,
   },
 ];
@@ -373,7 +395,7 @@ export const SEED_ANNOUNCEMENTS: Announcement[] = [
     id: 'ann-season-open',
     title: 'Season 04 Community Scrims Now Open',
     message:
-      'All Battle Royale, Clash Squad, and Lone Wolf rooms are 100% free to enter. Play matches, score kills, and win to earn Spider Coins (1,000 Coins = ₹10 payout).',
+      'All Battle Royale, Clash Squad, and Lone Wolf rooms are 100% free to enter. Play matches, score kills, and win to earn Spider Coins (100 Coins = ₹10 payout).',
     priority: 'high',
     active: true,
     createdAt: minusHours(12),
@@ -402,7 +424,7 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   rewardedAdsEnabled: true,
   interstitialCooldownSeconds: 90,
   bannerPlacement: 'all_screens',
-  featuredAnnouncement: '100% Free Free Fire Tournaments · Earn Spider Coins (1,000 Coins = ₹10)',
+  featuredAnnouncement: '100% Free Free Fire Tournaments · Earn Spider Coins (100 Coins = ₹10)',
   maintenanceMode: false,
   updatedAt: minusHours(1),
 };

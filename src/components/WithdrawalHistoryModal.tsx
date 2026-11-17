@@ -102,7 +102,7 @@ export function WithdrawalHistoryModal({
               Withdrawal History
             </h2>
             <p className="text-xs text-zinc-400">
-              Detailed status of your Spider Coin redemption requests (1,000 Coins = ₹10).
+              Detailed status of your Spider Coin redemption requests (100 Coins = ₹10).
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -183,7 +183,7 @@ export function WithdrawalHistoryModal({
               <Wallet className="w-8 h-8 text-zinc-500 mx-auto" />
               <p className="text-sm font-semibold text-white">No withdrawal requests yet</p>
               <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                Earn at least 1,000 Spider Coins (₹10) from free Fire tournaments, then submit a UPI or Bank payout request from your Profile wallet.
+                Earn at least 100 Spider Coins (₹10) from free Fire tournaments, then submit a UPI or Bank payout request from your Profile wallet.
               </p>
             </div>
           ) : visibleWithdrawals.length === 0 ? (

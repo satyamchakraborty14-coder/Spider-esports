@@ -286,8 +286,18 @@ test('validateAdminSlotUpdate enforces integer slot bounds and filled <= max inv
     maxSlots: 24,
     filledSlots: 12,
   });
+  assert.deepEqual(validateAdminSlotUpdate(500, 120), {
+    valid: true,
+    maxSlots: 500,
+    filledSlots: 120,
+  });
+  assert.deepEqual(validateAdminSlotUpdate(1000000, 0), {
+    valid: true,
+    maxSlots: 1000000,
+    filledSlots: 0,
+  });
   assert.equal(validateAdminSlotUpdate(1, 0).valid, false);
-  assert.equal(validateAdminSlotUpdate(101, 0).valid, false);
+  assert.equal(validateAdminSlotUpdate(1000001, 0).valid, false);
   assert.equal(validateAdminSlotUpdate(12, -1).valid, false);
   assert.equal(validateAdminSlotUpdate(12, 13).valid, false);
   assert.equal(validateAdminSlotUpdate(12.5, 4).valid, false);
@@ -296,15 +306,24 @@ test('validateAdminSlotUpdate enforces integer slot bounds and filled <= max inv
 test('validateSlotAssignment keeps participant slot numbers within tournament capacity', () => {
   assert.deepEqual(validateSlotAssignment(1, 12), { valid: true, slotNumber: 1 });
   assert.deepEqual(validateSlotAssignment(12, 12), { valid: true, slotNumber: 12 });
+  assert.deepEqual(validateSlotAssignment(250, 500), { valid: true, slotNumber: 250 });
   assert.equal(validateSlotAssignment(0, 12).valid, false);
   assert.equal(validateSlotAssignment(13, 12).valid, false);
   assert.equal(validateSlotAssignment(2.5, 12).valid, false);
 });
 
-test('validateTournamentBannerUrl accepts valid presets/http(s) URLs and rejects invalid or oversized ones', () => {
+test('validateTournamentBannerUrl accepts uploaded base64 images, bundled assets, presets/http(s) URLs and rejects invalid ones', () => {
   assert.deepEqual(
     validateTournamentBannerUrl(' /src/assets/images/hero_arena_banner_1794723403097.jpg '),
     { valid: true, bannerUrl: '/src/assets/images/hero_arena_banner_1794723403097.jpg' }
+  );
+  assert.deepEqual(
+    validateTournamentBannerUrl('/assets/hero_arena_banner-abc123.jpg'),
+    { valid: true, bannerUrl: '/assets/hero_arena_banner-abc123.jpg' }
+  );
+  assert.deepEqual(
+    validateTournamentBannerUrl('data:image/jpeg;base64,/9j/4AAQSkZJRg=='),
+    { valid: true, bannerUrl: 'data:image/jpeg;base64,/9j/4AAQSkZJRg==' }
   );
   assert.deepEqual(
     validateTournamentBannerUrl('https://cdn.example.com/arena.png'),
@@ -313,6 +332,10 @@ test('validateTournamentBannerUrl accepts valid presets/http(s) URLs and rejects
   assert.equal(validateTournamentBannerUrl('').valid, false);
   assert.equal(validateTournamentBannerUrl('   ').valid, false);
   assert.equal(validateTournamentBannerUrl('javascript:alert(1)').valid, false);
-  assert.equal(validateTournamentBannerUrl('data:image/png;base64,AAAA').valid, false);
+  assert.equal(validateTournamentBannerUrl('data:image/svg+xml;base64,PHN2Zz4=').valid, false);
   assert.equal(validateTournamentBannerUrl(`https://example.com/${'a'.repeat(290)}`).valid, false);
+  assert.equal(
+    validateTournamentBannerUrl(`data:image/jpeg;base64,${'A'.repeat(200_050)}`).valid,
+    false
+  );
 });

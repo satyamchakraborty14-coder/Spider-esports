@@ -64,7 +64,7 @@
         "category": { "type": "string", "enum": ["Battle Royale", "Clash Squad", "Lone Wolf"] },
         "mode": { "type": "string", "enum": ["Solo", "Duo", "Squad", "CS 1v1", "CS 2v2", "CS 4v4", "Lone Wolf 1v1", "Lone Wolf 2v2"] },
         "mapName": { "type": "string", "minLength": 2, "maxLength": 48 },
-        "bannerUrl": { "type": "string", "maxLength": 300 },
+        "bannerUrl": { "type": "string", "maxLength": 200000 },
         "matchDate": { "type": "string", "maxLength": 32 },
         "matchTime": { "type": "string", "maxLength": 32 },
         "registrationDeadline": { "type": "string", "format": "date-time" },
@@ -171,7 +171,7 @@
     },
     "WithdrawalRequest": {
       "title": "WithdrawalRequest",
-      "description": "Player Spider Coin withdrawal request converted at 1000 coins = ₹10.",
+      "description": "Player Spider Coin withdrawal request converted at 100 coins = ₹10.",
       "type": "object",
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
@@ -282,7 +282,7 @@
     },
     "/withdrawals/{withdrawalId}": {
       "schema": { "$ref": "#/entities/WithdrawalRequest" },
-      "description": "Spider Coin withdrawal requests (1000 coins = ₹10)."
+      "description": "Spider Coin withdrawal requests (100 coins = ₹10)."
     },
     "/notifications/{notificationId}": {
       "schema": { "$ref": "#/entities/NotificationItem" },

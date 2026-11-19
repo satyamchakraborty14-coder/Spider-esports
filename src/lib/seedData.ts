@@ -6,6 +6,7 @@ import type {
   Tournament,
   TournamentResult,
 } from '../types/esports';
+import { ADMOB_PRODUCTION_CREDENTIALS } from '../utils/admobHelpers';
 
 import logoFfImg from '../assets/images/spider_esports_logo_ff.png';
 import battleRoyaleBannerImg from '../assets/images/hero_arena_banner_1794723403097.jpg';
@@ -413,12 +414,12 @@ export const SEED_ANNOUNCEMENTS: Announcement[] = [
 
 export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   id: 'default',
-  adMobMode: 'test',
-  adMobAppId: ADMOB_TEST_UNITS.appId,
+  adMobMode: 'production',
+  adMobAppId: ADMOB_PRODUCTION_CREDENTIALS.appId,
   adSenseClientId: '',
-  bannerAdUnitId: ADMOB_TEST_UNITS.banner,
-  interstitialAdUnitId: ADMOB_TEST_UNITS.interstitial,
-  rewardedAdUnitId: ADMOB_TEST_UNITS.rewarded,
+  bannerAdUnitId: ADMOB_PRODUCTION_CREDENTIALS.banner,
+  interstitialAdUnitId: ADMOB_PRODUCTION_CREDENTIALS.interstitial,
+  rewardedAdUnitId: ADMOB_PRODUCTION_CREDENTIALS.rewarded,
   bannerAdsEnabled: true,
   interstitialAdsEnabled: true,
   rewardedAdsEnabled: true,

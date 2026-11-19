@@ -49540,6 +49540,133 @@ async function testConnection() {
 	}
 }
 testConnection();
+// src/utils/admobHelpers.ts
+var ADMOB_OFFICIAL_TEST_IDS = {
+	publisherId: "pub-3940256099942544",
+	appId: "ca-app-pub-3940256099942544~3347511713",
+	banner: "ca-app-pub-3940256099942544/6300978111",
+	interstitial: "ca-app-pub-3940256099942544/1033173712",
+	rewarded: "ca-app-pub-3940256099942544/5224354917"
+};
+var ADMOB_PRODUCTION_CREDENTIALS = {
+	publisherId: "pub-5622658710249262",
+	appId: "ca-app-pub-5622658710249262~5604296331",
+	banner: "ca-app-pub-5622658710249262/8095883252",
+	interstitial: "ca-app-pub-5622658710249262/2009646191",
+	rewarded: "ca-app-pub-5622658710249262/8948644970",
+	appAdsTxt: "google.com, pub-5622658710249262, DIRECT, f08c47fec0942fa0"
+};
+var ADMOB_APP_ID_REGEX = /^ca-app-pub-\d{16}~\d{10}$/;
+var ADMOB_UNIT_ID_REGEX = /^ca-app-pub-\d{16}\/\d{10}$/;
+var ADSENSE_CLIENT_REGEX = /^ca-pub-\d{16}$/;
+var PUB_ID_EXTRACT_REGEX = /ca-(?:app-)?pub-(\d{16})/;
+function validateAdMobAppId(value) {
+	const trimmed = value.trim();
+	if (!trimmed) return "AdMob App ID is required (format: ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY).";
+	if (!ADMOB_APP_ID_REGEX.test(trimmed)) return "Invalid AdMob App ID. Expected format: ca-app-pub-1234567890123456~1234567890.";
+	return null;
+}
+function validateAdMobUnitId(value, label) {
+	const trimmed = value.trim();
+	if (!trimmed) return `${label} is required (format: ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY).`;
+	if (!ADMOB_UNIT_ID_REGEX.test(trimmed)) return `Invalid ${label}. Expected format: ca-app-pub-1234567890123456/1234567890.`;
+	return null;
+}
+function validateAdSenseClientId(value) {
+	const trimmed = value.trim();
+	if (!trimmed) return null;
+	if (!ADSENSE_CLIENT_REGEX.test(trimmed)) return "Invalid Web AdSense Publisher ID. Expected format: ca-pub-1234567890123456.";
+	return null;
+}
+function validateInterstitialCooldownSeconds(seconds) {
+	if (!Number.isInteger(seconds) || seconds < 30 || seconds > 600) return `Interstitial frequency cooldown must be a whole number between 30 and 600 seconds.`;
+	return null;
+}
+function extractAdMobPublisherId(idOrUnit) {
+	const match = idOrUnit.trim().match(PUB_ID_EXTRACT_REGEX);
+	return match ? `pub-${match[1]}` : null;
+}
+function buildAppAdsTxtLine(idOrUnit) {
+	return `google.com, ${extractAdMobPublisherId(idOrUnit) || ADMOB_PRODUCTION_CREDENTIALS.publisherId}, DIRECT, f08c47fec0942fa0`;
+}
+function resolveEffectiveAdMobConfig(settings, options) {
+	const isTestMode = Boolean(options?.forceTestMode) || settings.adMobMode !== "production";
+	const rawCooldown = settings.interstitialCooldownSeconds ?? 90;
+	const clampedCooldown = Math.min(600, Math.max(30, Math.round(rawCooldown)));
+	const bannerPlacement = settings.bannerPlacement || "all_screens";
+	const bannerAdsEnabled = settings.bannerAdsEnabled !== false;
+	const interstitialAdsEnabled = settings.interstitialAdsEnabled !== false;
+	const rewardedAdsEnabled = settings.rewardedAdsEnabled !== false;
+	if (isTestMode) return {
+		isTestMode: true,
+		appId: ADMOB_OFFICIAL_TEST_IDS.appId,
+		bannerId: ADMOB_OFFICIAL_TEST_IDS.banner,
+		interstitialId: ADMOB_OFFICIAL_TEST_IDS.interstitial,
+		rewardedId: ADMOB_OFFICIAL_TEST_IDS.rewarded,
+		adSenseClientId: settings.adSenseClientId?.trim() || void 0,
+		bannerAdsEnabled,
+		interstitialAdsEnabled,
+		rewardedAdsEnabled,
+		interstitialCooldownSeconds: clampedCooldown,
+		interstitialCooldownMs: clampedCooldown * 1e3,
+		bannerPlacement
+	};
+	return {
+		isTestMode: false,
+		appId: settings.adMobAppId?.trim() || ADMOB_PRODUCTION_CREDENTIALS.appId,
+		bannerId: settings.bannerAdUnitId?.trim() || ADMOB_PRODUCTION_CREDENTIALS.banner,
+		interstitialId: settings.interstitialAdUnitId?.trim() || ADMOB_PRODUCTION_CREDENTIALS.interstitial,
+		rewardedId: settings.rewardedAdUnitId?.trim() || ADMOB_PRODUCTION_CREDENTIALS.rewarded,
+		adSenseClientId: settings.adSenseClientId?.trim() || void 0,
+		bannerAdsEnabled,
+		interstitialAdsEnabled,
+		rewardedAdsEnabled,
+		interstitialCooldownSeconds: clampedCooldown,
+		interstitialCooldownMs: clampedCooldown * 1e3,
+		bannerPlacement
+	};
+}
+function shouldDisplayBannerAtScreen(settings, screen) {
+	if (settings.bannerAdsEnabled === false) return false;
+	const placement = settings.bannerPlacement || "all_screens";
+	if (placement === "home_only") return screen === "home";
+	if (placement === "home_and_matches") return screen === "home" || screen === "matches";
+	return true;
+}
+/**
+* Strict display guard: an ad is eligible to display ONLY when its own ad request succeeded ('loaded').
+* Never returns true just because the SDK initialized ('idle') or failed ('failed').
+*/
+function canDisplayLoadedAd(state) {
+	return state === "loaded";
+}
+/**
+* Returns initial format states right after SDK initialization without falsely marking ads as loaded/ready.
+*/
+function buildInitialAndroidFormatStates(config, isOnline) {
+	if (!isOnline) return {
+		bannerState: config.bannerAdsEnabled ? "offline" : "disabled",
+		interstitialState: config.interstitialAdsEnabled ? "offline" : "disabled",
+		rewardedState: config.rewardedAdsEnabled ? "offline" : "disabled"
+	};
+	return {
+		bannerState: config.bannerAdsEnabled ? "idle" : "disabled",
+		interstitialState: config.interstitialAdsEnabled ? "idle" : "disabled",
+		rewardedState: config.rewardedAdsEnabled ? "idle" : "disabled"
+	};
+}
+/**
+* Determines whether a withdrawal submission should proceed after attempting a rewarded ad.
+* Never blocks withdrawals in Web/PWA preview or when the rewarded ad fails/is offline/disabled.
+* Only pauses if the user started watching a loaded ad on Android and dismissed it early.
+*/
+function shouldProceedWithWithdrawalAfterRewardedAd(outcome) {
+	if (outcome === "dismissed") return {
+		proceed: false,
+		reason: "Ad closed early. Watch the full rewarded ad to submit your withdrawal request."
+	};
+	return { proceed: true };
+}
 // src/lib/seedData.ts
 var BRAND_ASSETS = {
 	logo: "/assets/spider_esports_logo_ff-6FC-sVnj.png",
@@ -49584,12 +49711,6 @@ var MATCH_BANNER_PRESETS = [
 		url: BRAND_ASSETS.defaultAvatar
 	}
 ];
-var ADMOB_TEST_UNITS = {
-	appId: "ca-app-pub-3940256099942544~3347511713",
-	banner: "ca-app-pub-3940256099942544/6300978111",
-	interstitial: "ca-app-pub-3940256099942544/1033173712",
-	rewarded: "ca-app-pub-3940256099942544/5224354917"
-};
 var today = /* @__PURE__ */ new Date();
 var todayStr = today.toISOString().slice(0, 10);
 var tomorrowStr = new Date(today.getTime() + 864e5).toISOString().slice(0, 10);
@@ -49927,12 +50048,12 @@ var SEED_ANNOUNCEMENTS = [{
 }];
 var DEFAULT_ADMIN_SETTINGS = {
 	id: "default",
-	adMobMode: "test",
-	adMobAppId: ADMOB_TEST_UNITS.appId,
+	adMobMode: "production",
+	adMobAppId: ADMOB_PRODUCTION_CREDENTIALS.appId,
 	adSenseClientId: "",
-	bannerAdUnitId: ADMOB_TEST_UNITS.banner,
-	interstitialAdUnitId: ADMOB_TEST_UNITS.interstitial,
-	rewardedAdUnitId: ADMOB_TEST_UNITS.rewarded,
+	bannerAdUnitId: ADMOB_PRODUCTION_CREDENTIALS.banner,
+	interstitialAdUnitId: ADMOB_PRODUCTION_CREDENTIALS.interstitial,
+	rewardedAdUnitId: ADMOB_PRODUCTION_CREDENTIALS.rewarded,
 	bannerAdsEnabled: true,
 	interstitialAdsEnabled: true,
 	rewardedAdsEnabled: true,
@@ -50265,7 +50386,7 @@ var TOURNAMENT_MODES = {
 		mode: "Duo",
 		category: "Battle Royale",
 		teamSize: 2,
-		requiredTeammates: 1,
+		requiredTeammates: 0,
 		defaultMaxSlots: 24,
 		shortLabel: "BR Duo"
 	},
@@ -50273,7 +50394,7 @@ var TOURNAMENT_MODES = {
 		mode: "Squad",
 		category: "Battle Royale",
 		teamSize: 4,
-		requiredTeammates: 3,
+		requiredTeammates: 0,
 		defaultMaxSlots: 12,
 		shortLabel: "BR Squad"
 	},
@@ -50289,7 +50410,7 @@ var TOURNAMENT_MODES = {
 		mode: "CS 2v2",
 		category: "Clash Squad",
 		teamSize: 2,
-		requiredTeammates: 1,
+		requiredTeammates: 0,
 		defaultMaxSlots: 16,
 		shortLabel: "CS 2v2"
 	},
@@ -50297,7 +50418,7 @@ var TOURNAMENT_MODES = {
 		mode: "CS 4v4",
 		category: "Clash Squad",
 		teamSize: 4,
-		requiredTeammates: 3,
+		requiredTeammates: 0,
 		defaultMaxSlots: 16,
 		shortLabel: "CS 4v4"
 	},
@@ -50313,7 +50434,7 @@ var TOURNAMENT_MODES = {
 		mode: "Lone Wolf 2v2",
 		category: "Lone Wolf",
 		teamSize: 2,
-		requiredTeammates: 1,
+		requiredTeammates: 0,
 		defaultMaxSlots: 16,
 		shortLabel: "LW 2v2"
 	}
@@ -50349,22 +50470,6 @@ function validateFreeFireUid(uid) {
 function validateFreeFireIgn(ign) {
 	const trimmed = ign.trim();
 	if (trimmed.length < 2 || trimmed.length > 32) return "In-Game Name (IGN) must be between 2 and 32 characters.";
-	return null;
-}
-function validateTeammates(mode, teammates, captainUid) {
-	const def = getModeDefinition(mode);
-	if (def.requiredTeammates === 0) return null;
-	if (teammates.length !== def.requiredTeammates) return `${mode} requires ${def.requiredTeammates} teammate${def.requiredTeammates > 1 ? "s" : ""}.`;
-	const seenUids = /* @__PURE__ */ new Set([captainUid.trim()]);
-	for (let i = 0; i < teammates.length; i++) {
-		const mate = teammates[i];
-		const ignErr = validateFreeFireIgn(mate.ign);
-		if (ignErr) return `Teammate ${i + 1}: ${ignErr}`;
-		const uidErr = validateFreeFireUid(mate.uid);
-		if (uidErr) return `Teammate ${i + 1}: ${uidErr}`;
-		if (seenUids.has(mate.uid.trim())) return `Teammate ${i + 1} UID duplicates another roster player.`;
-		seenUids.add(mate.uid.trim());
-	}
 	return null;
 }
 function canJoinTournament(params) {
@@ -50944,7 +51049,7 @@ async function deleteAccountCompletely(profile) {
 }
 async function joinTournamentInFirestore(params) {
 	if (!auth.currentUser || !auth.currentUser.emailVerified) throw new Error("Please verify your email address in your Profile before joining tournaments.");
-	const { tournament, profile, freeFireIgn, freeFireUid, teamName, teammates } = params;
+	const { tournament, profile, freeFireIgn, freeFireUid } = params;
 	const regId = `${tournament.id}_${profile.uid}`;
 	const tRef = doc(db, "tournaments", tournament.id);
 	const regRef = doc(db, "registrations", regId);
@@ -50991,8 +51096,6 @@ async function joinTournamentInFirestore(params) {
 				status: "confirmed",
 				updatedAt: serverTimestamp()
 			};
-			if (teamName?.trim()) regPayload.teamName = teamName.trim();
-			if (teammates && teammates.length > 0) regPayload.teammates = teammates;
 			if (regSnap.exists()) tx.update(regRef, regPayload);
 			else tx.set(regRef, {
 				...regPayload,
@@ -51832,121 +51935,6 @@ function getAdConsentSummary(personalizedAdsEnabled) {
 		shortLabel: "Non-Personalized",
 		modeHeadline: "Opted Out · Non-Personalized Ads Only",
 		modeDescription: "Ad personalization is turned off (NPA=1). Ads use only contextual tournament information without behavioral profiling or cross-app tracking."
-	};
-}
-// src/utils/admobHelpers.ts
-var ADMOB_OFFICIAL_TEST_IDS = {
-	publisherId: "pub-3940256099942544",
-	appId: "ca-app-pub-3940256099942544~3347511713",
-	banner: "ca-app-pub-3940256099942544/6300978111",
-	interstitial: "ca-app-pub-3940256099942544/1033173712",
-	rewarded: "ca-app-pub-3940256099942544/5224354917"
-};
-var ADMOB_PRODUCTION_CREDENTIALS = {
-	publisherId: "pub-5622658710249262",
-	appId: "ca-app-pub-5622658710249262~5604296331",
-	banner: "ca-app-pub-5622658710249262/8095883252",
-	interstitial: "ca-app-pub-5622658710249262/2009646191",
-	rewarded: "ca-app-pub-5622658710249262/8948644970",
-	appAdsTxt: "google.com, pub-5622658710249262, DIRECT, f08c47fec0942fa0"
-};
-var ADMOB_APP_ID_REGEX = /^ca-app-pub-\d{16}~\d{10}$/;
-var ADMOB_UNIT_ID_REGEX = /^ca-app-pub-\d{16}\/\d{10}$/;
-var ADSENSE_CLIENT_REGEX = /^ca-pub-\d{16}$/;
-var PUB_ID_EXTRACT_REGEX = /ca-(?:app-)?pub-(\d{16})/;
-function validateAdMobAppId(value) {
-	const trimmed = value.trim();
-	if (!trimmed) return "AdMob App ID is required (format: ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY).";
-	if (!ADMOB_APP_ID_REGEX.test(trimmed)) return "Invalid AdMob App ID. Expected format: ca-app-pub-1234567890123456~1234567890.";
-	return null;
-}
-function validateAdMobUnitId(value, label) {
-	const trimmed = value.trim();
-	if (!trimmed) return `${label} is required (format: ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY).`;
-	if (!ADMOB_UNIT_ID_REGEX.test(trimmed)) return `Invalid ${label}. Expected format: ca-app-pub-1234567890123456/1234567890.`;
-	return null;
-}
-function validateAdSenseClientId(value) {
-	const trimmed = value.trim();
-	if (!trimmed) return null;
-	if (!ADSENSE_CLIENT_REGEX.test(trimmed)) return "Invalid Web AdSense Publisher ID. Expected format: ca-pub-1234567890123456.";
-	return null;
-}
-function validateInterstitialCooldownSeconds(seconds) {
-	if (!Number.isInteger(seconds) || seconds < 30 || seconds > 600) return `Interstitial frequency cooldown must be a whole number between 30 and 600 seconds.`;
-	return null;
-}
-function extractAdMobPublisherId(idOrUnit) {
-	const match = idOrUnit.trim().match(PUB_ID_EXTRACT_REGEX);
-	return match ? `pub-${match[1]}` : null;
-}
-function buildAppAdsTxtLine(idOrUnit) {
-	return `google.com, ${extractAdMobPublisherId(idOrUnit) || ADMOB_PRODUCTION_CREDENTIALS.publisherId}, DIRECT, f08c47fec0942fa0`;
-}
-function resolveEffectiveAdMobConfig(settings, options) {
-	const isTestMode = Boolean(options?.forceTestMode) || settings.adMobMode !== "production";
-	const rawCooldown = settings.interstitialCooldownSeconds ?? 90;
-	const clampedCooldown = Math.min(600, Math.max(30, Math.round(rawCooldown)));
-	const bannerPlacement = settings.bannerPlacement || "all_screens";
-	const bannerAdsEnabled = settings.bannerAdsEnabled !== false;
-	const interstitialAdsEnabled = settings.interstitialAdsEnabled !== false;
-	const rewardedAdsEnabled = settings.rewardedAdsEnabled !== false;
-	if (isTestMode) return {
-		isTestMode: true,
-		appId: ADMOB_OFFICIAL_TEST_IDS.appId,
-		bannerId: ADMOB_OFFICIAL_TEST_IDS.banner,
-		interstitialId: ADMOB_OFFICIAL_TEST_IDS.interstitial,
-		rewardedId: ADMOB_OFFICIAL_TEST_IDS.rewarded,
-		adSenseClientId: settings.adSenseClientId?.trim() || void 0,
-		bannerAdsEnabled,
-		interstitialAdsEnabled,
-		rewardedAdsEnabled,
-		interstitialCooldownSeconds: clampedCooldown,
-		interstitialCooldownMs: clampedCooldown * 1e3,
-		bannerPlacement
-	};
-	return {
-		isTestMode: false,
-		appId: settings.adMobAppId?.trim() || ADMOB_PRODUCTION_CREDENTIALS.appId,
-		bannerId: settings.bannerAdUnitId?.trim() || ADMOB_PRODUCTION_CREDENTIALS.banner,
-		interstitialId: settings.interstitialAdUnitId?.trim() || ADMOB_PRODUCTION_CREDENTIALS.interstitial,
-		rewardedId: settings.rewardedAdUnitId?.trim() || ADMOB_PRODUCTION_CREDENTIALS.rewarded,
-		adSenseClientId: settings.adSenseClientId?.trim() || void 0,
-		bannerAdsEnabled,
-		interstitialAdsEnabled,
-		rewardedAdsEnabled,
-		interstitialCooldownSeconds: clampedCooldown,
-		interstitialCooldownMs: clampedCooldown * 1e3,
-		bannerPlacement
-	};
-}
-function shouldDisplayBannerAtScreen(settings, screen) {
-	if (settings.bannerAdsEnabled === false) return false;
-	const placement = settings.bannerPlacement || "all_screens";
-	if (placement === "home_only") return screen === "home";
-	if (placement === "home_and_matches") return screen === "home" || screen === "matches";
-	return true;
-}
-/**
-* Strict display guard: an ad is eligible to display ONLY when its own ad request succeeded ('loaded').
-* Never returns true just because the SDK initialized ('idle') or failed ('failed').
-*/
-function canDisplayLoadedAd(state) {
-	return state === "loaded";
-}
-/**
-* Returns initial format states right after SDK initialization without falsely marking ads as loaded/ready.
-*/
-function buildInitialAndroidFormatStates(config, isOnline) {
-	if (!isOnline) return {
-		bannerState: config.bannerAdsEnabled ? "offline" : "disabled",
-		interstitialState: config.interstitialAdsEnabled ? "offline" : "disabled",
-		rewardedState: config.rewardedAdsEnabled ? "offline" : "disabled"
-	};
-	return {
-		bannerState: config.bannerAdsEnabled ? "idle" : "disabled",
-		interstitialState: config.interstitialAdsEnabled ? "idle" : "disabled",
-		rewardedState: config.rewardedAdsEnabled ? "idle" : "disabled"
 	};
 }
 // node_modules/react/cjs/react-jsx-runtime.production.js
@@ -53787,7 +53775,7 @@ var __vitePreload = function preload(baseModule, deps, importerUrl) {
 		return baseModule().catch(handlePreloadError);
 	});
 };
-var AdMob = registerPlugin("AdMob", { web: () => __vitePreload(() => import("./web-DMisIAaR.js").then((m) => new m.AdMobWeb()), []) });
+var AdMob = registerPlugin("AdMob", { web: () => __vitePreload(() => import("./web-DwjSPnpp.js").then((m) => new m.AdMobWeb()), []) });
 // src/lib/admobBridge.ts
 var AD_TIMEOUT_MS = 12e3;
 var STATUS_LISTENERS = /* @__PURE__ */ new Set();
@@ -54257,7 +54245,7 @@ async function showNativeInterstitialAd(settings, consentAccepted) {
 		return false;
 	}
 }
-async function showRewardedAdForCosmetic(settings, consentAccepted) {
+async function runNativeRewardedAd(settings, consentAccepted, dismissMessage) {
 	const config = resolveEffectiveAdMobConfig(settings, { forceTestMode: isDebugEnvironment() });
 	if (!config.rewardedAdsEnabled) {
 		if (Capacitor.isNativePlatform()) updateAndroidStatus({ rewardedState: "disabled" });
@@ -54324,7 +54312,7 @@ async function showRewardedAdForCosmetic(settings, consentAccepted) {
 		}
 		return {
 			outcome: "dismissed",
-			error: "Ad closed before completion. Watch the full ad to unlock the cosmetic emblem."
+			error: dismissMessage
 		};
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Rewarded ad failed to load.";
@@ -54340,6 +54328,12 @@ async function showRewardedAdForCosmetic(settings, consentAccepted) {
 		await rewardHandle?.remove().catch(() => void 0);
 		rewardedInFlight = false;
 	}
+}
+async function showRewardedAdForCosmetic(settings, consentAccepted) {
+	return runNativeRewardedAd(settings, consentAccepted, "Ad closed before completion. Watch the full ad to unlock the cosmetic emblem.");
+}
+async function showRewardedAdForWithdrawal(settings, consentAccepted) {
+	return runNativeRewardedAd(settings, consentAccepted, "Ad closed early. Watch the full rewarded ad to submit your withdrawal request.");
 }
 function registerAdMobLifecycle(params) {
 	if (typeof window === "undefined" || typeof document === "undefined") return () => void 0;
@@ -56708,6 +56702,12 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 		}
 		setSubmittingWithdraw(true);
 		try {
+			const gate = shouldProceedWithWithdrawalAfterRewardedAd((await showRewardedAdForWithdrawal(adminSettings, consentAccepted)).outcome);
+			if (!gate.proceed) {
+				setWithdrawError(gate.reason);
+				onToast(gate.reason);
+				return;
+			}
 			await requestCoinWithdrawal({
 				profile,
 				amountCoins: validation.coins,
@@ -57144,7 +57144,11 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 								type: "submit",
 								disabled: submittingWithdraw || userCoins < 100 || profile.suspended,
 								className: "w-full min-h-[46px] rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] disabled:opacity-45 disabled:cursor-not-allowed text-xs font-semibold text-white transition-colors",
-								children: submittingWithdraw ? "Submitting Request..." : userCoins < 100 ? `Need ${100 .toLocaleString()} Coins (₹10) to Withdraw` : `Request ${formatRupees(previewPayout)} Withdrawal`
+								children: submittingWithdraw ? "Processing Request..." : userCoins < 100 ? `Need ${100 .toLocaleString()} Coins (₹10) to Withdraw` : `Request ${formatRupees(previewPayout)} Withdrawal`
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								className: "text-[11px] text-zinc-400",
+								children: "Android APK plays a rewarded ad when submitting a withdrawal request; payouts always submit safely if no ad is available."
 							})
 						]
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -57619,7 +57623,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "font-semibold text-white",
 							children: "SPIDER ESPORTS Privacy Policy"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "We collect only your email address (isolated in private Firestore storage), unique username, and Free Fire IGN/UID to verify identity and manage free tournament brackets. Google AdMob and Google User Messaging Platform (UMP) serve policy-compliant ads and honor your consent choices. Rewarded ads only unlock non-cash profile emblems (never coins or cash). You may delete your account and personal records permanently at any time." })]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "We collect only your email address (isolated in private Firestore storage), unique username, and Free Fire IGN/UID to verify identity and manage free tournament brackets. Google AdMob and Google User Messaging Platform (UMP) serve policy-compliant ads and honor your consent choices. Rewarded ads may unlock optional non-cash profile emblems or play during withdrawal submission (never minting extra Spider Coins or cash). You may delete your account and personal records permanently at any time." })]
 					}),
 					legalDoc === "terms" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "rounded-lg bg-[#09090B] border border-white/10 p-4 text-xs text-zinc-300 space-y-2 leading-relaxed",
@@ -57638,7 +57642,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 							children: [
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Single Currency: Spider Coins are the only redeemable reward unit in SPIDER ESPORTS." }),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Earning Rules: Coins are credited strictly by admins for verified match play, eliminations, and tournament wins." }),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Ad Policy: Rewarded ads never grant Spider Coins, cash, prizes, or tournament entry — only optional non-cash profile emblems." }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Ad Policy: Rewarded ads never mint extra Spider Coins or cash — they unlock optional non-cash profile emblems or accompany withdrawal submissions in the Android app." }),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Conversion Rate: 100 Spider Coins = ₹10 (minimum withdrawal: 100 Coins)." }),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Verification: Admins verify match results and withdrawal payout details (UPI / Bank) before approval." })
 							]
@@ -59860,7 +59864,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 											children: "Rewarded Ads"
 										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 											className: "block text-[11px] text-zinc-400",
-											children: "Cosmetic emblem only (0 Coins)"
+											children: "Withdrawals & cosmetic emblem"
 										})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
 											type: "checkbox",
 											checked: rewardedAdsEnabled,
@@ -60140,8 +60144,6 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 	const [registrations, setRegistrations] = (0, import_react.useState)([]);
 	const [freeFireIgn, setFreeFireIgn] = (0, import_react.useState)("");
 	const [freeFireUid, setFreeFireUid] = (0, import_react.useState)("");
-	const [teamName, setTeamName] = (0, import_react.useState)("");
-	const [teammates, setTeammates] = (0, import_react.useState)([]);
 	const [credentials, setCredentials] = (0, import_react.useState)(null);
 	const [credError, setCredError] = (0, import_react.useState)(null);
 	const [formError, setFormError] = (0, import_react.useState)(null);
@@ -60160,12 +60162,6 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 		setJustJoined((prev) => prev?.tournamentId === tournament.id ? prev : null);
 		setFreeFireIgn(profile?.freeFireIgn || "");
 		setFreeFireUid(profile?.freeFireUid || "");
-		setTeamName("");
-		const def = getModeDefinition(tournament.mode);
-		setTeammates(Array.from({ length: def.requiredTeammates }, () => ({
-			ign: "",
-			uid: ""
-		})));
 		const unsub = subscribeTournamentRegistrations(tournament.id, (items) => {
 			setRegistrations(items);
 		});
@@ -60208,7 +60204,6 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 		isSignedIn
 	]);
 	if (!tournament) return null;
-	const modeDef = getModeDefinition(tournament.mode);
 	const optimisticJoined = justJoined?.tournamentId === tournament.id ? justJoined : null;
 	const displayFilledSlots = Math.min(tournament.maxSlots, Math.max(tournament.filledSlots, optimisticJoined ? optimisticJoined.nextFilledSlots : 0));
 	const availableSlots = Math.max(0, tournament.maxSlots - displayFilledSlots);
@@ -60246,28 +60241,20 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 			setFormError(uidErr);
 			return;
 		}
-		const mateErr = validateTeammates(tournament.mode, teammates, freeFireUid);
-		if (mateErr) {
-			setFormError(mateErr);
-			return;
-		}
 		setSubmitting(true);
 		try {
 			const res = await joinTournamentInFirestore({
 				tournament,
 				profile,
 				freeFireIgn,
-				freeFireUid,
-				teamName: modeDef.requiredTeammates > 0 ? teamName : void 0,
-				teammates: modeDef.requiredTeammates > 0 ? teammates : void 0
+				freeFireUid
 			});
 			setJustJoined({
 				tournamentId: tournament.id,
 				slotNumber: res.slotNumber,
 				nextFilledSlots: res.nextFilledSlots,
 				freeFireIgn: freeFireIgn.trim(),
-				freeFireUid: freeFireUid.trim(),
-				teamName: modeDef.requiredTeammates > 0 && teamName.trim() ? teamName.trim() : void 0
+				freeFireUid: freeFireUid.trim()
 			});
 			onSuccessToast(`Joined ${tournament.title}! Slot #${res.slotNumber} confirmed.`);
 			onAfterJoinConfirmation?.();
@@ -60506,8 +60493,7 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 									className: "font-mono-tabular text-white",
 									children: myRegistration?.freeFireUid ?? optimisticJoined?.freeFireUid
-								}),
-								myRegistration?.teamName ?? optimisticJoined?.teamName ? ` · Team: ${myRegistration?.teamName ?? optimisticJoined?.teamName}` : ""
+								})
 							]
 						}),
 						!cancelEligibility.allowed && cancelEligibility.reason && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
@@ -60566,66 +60552,6 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 									placeholder: "e.g. 2049581723",
 									className: "w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#121216] text-sm font-mono-tabular text-white focus:outline-none focus:border-[#E11D48]"
 								})] })]
-							}),
-							modeDef.requiredTeammates > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "space-y-3 pt-2 border-t border-white/10",
-								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
-										htmlFor: "join-team",
-										className: "block text-xs font-medium text-zinc-300 mb-1.5",
-										children: "Team / Squad Name (Optional)"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-										id: "join-team",
-										type: "text",
-										value: teamName,
-										onChange: (e) => setTeamName(e.target.value),
-										placeholder: "e.g. Arachnid Five",
-										className: "w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#121216] text-sm text-white focus:outline-none focus:border-[#E11D48]"
-									})] }),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-										className: "text-xs font-medium text-zinc-400",
-										children: [
-											"Required Teammates (",
-											modeDef.requiredTeammates,
-											")"
-										]
-									}),
-									teammates.map((mate, idx) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-										className: "grid grid-cols-1 sm:grid-cols-2 gap-3",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-											type: "text",
-											required: true,
-											"aria-label": `Teammate ${idx + 1} IGN`,
-											value: mate.ign,
-											onChange: (e) => {
-												const next = [...teammates];
-												next[idx] = {
-													...next[idx],
-													ign: e.target.value
-												};
-												setTeammates(next);
-											},
-											placeholder: `Teammate ${idx + 1} IGN`,
-											className: "w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#121216] text-sm text-white focus:outline-none focus:border-[#E11D48]"
-										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-											type: "text",
-											required: true,
-											inputMode: "numeric",
-											"aria-label": `Teammate ${idx + 1} UID`,
-											value: mate.uid,
-											onChange: (e) => {
-												const next = [...teammates];
-												next[idx] = {
-													...next[idx],
-													uid: e.target.value
-												};
-												setTeammates(next);
-											},
-											placeholder: `Teammate ${idx + 1} UID`,
-											className: "w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#121216] text-sm font-mono-tabular text-white focus:outline-none focus:border-[#E11D48]"
-										})]
-									}, idx))
-								]
 							}),
 							formError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 								role: "alert",
@@ -60710,7 +60636,7 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 								className: "min-w-0",
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 									className: "font-semibold text-white truncate",
-									children: reg.teamName ? `${reg.teamName} (${reg.freeFireIgn})` : reg.freeFireIgn
+									children: reg.freeFireIgn
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
 									className: "text-zinc-400 font-mono-tabular",
 									children: ["UID: ", reg.freeFireUid]

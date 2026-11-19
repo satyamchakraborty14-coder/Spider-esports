@@ -11,6 +11,7 @@ import {
   isTournamentFull,
   validateAdminPassword,
   validateAdminSlotUpdate,
+  validateFreeFireIgn,
   validateFreeFireUid,
   validateSlotAssignment,
   validateTeammates,
@@ -41,15 +42,15 @@ const baseTournament: Tournament = {
   updatedAt: '2026-11-14T10:00:00.000Z',
 };
 
-test('mode definitions cover all 8 required Free Fire modes', () => {
+test('mode definitions cover all 8 required Free Fire modes with individual join only', () => {
   assert.equal(getModeDefinition('Solo').requiredTeammates, 0);
-  assert.equal(getModeDefinition('Duo').requiredTeammates, 1);
-  assert.equal(getModeDefinition('Squad').requiredTeammates, 3);
+  assert.equal(getModeDefinition('Duo').requiredTeammates, 0);
+  assert.equal(getModeDefinition('Squad').requiredTeammates, 0);
   assert.equal(getModeDefinition('CS 1v1').category, 'Clash Squad');
   assert.equal(getModeDefinition('CS 2v2').teamSize, 2);
-  assert.equal(getModeDefinition('CS 4v4').requiredTeammates, 3);
+  assert.equal(getModeDefinition('CS 4v4').requiredTeammates, 0);
   assert.equal(getModeDefinition('Lone Wolf 1v1').category, 'Lone Wolf');
-  assert.equal(getModeDefinition('Lone Wolf 2v2').requiredTeammates, 1);
+  assert.equal(getModeDefinition('Lone Wolf 2v2').requiredTeammates, 0);
 });
 
 test('slot availability and full detection work accurately', () => {
@@ -59,33 +60,17 @@ test('slot availability and full detection work accurately', () => {
   assert.equal(getAvailableSlots({ ...baseTournament, filledSlots: 15 }), 0);
 });
 
-test('Free Fire UID and teammate validation reject invalid or duplicate UIDs', () => {
+test('Free Fire UID and IGN validation enforce valid individual player details for every mode', () => {
   assert.equal(validateFreeFireUid('123456789'), null);
   assert.ok(validateFreeFireUid('abc123') !== null);
   assert.ok(validateFreeFireUid('123') !== null);
 
-  assert.equal(
-    validateTeammates(
-      'Duo',
-      [{ ign: 'VenomFF', uid: '987654321' }],
-      '123456789'
-    ),
-    null
-  );
+  assert.equal(validateFreeFireIgn('SpiderVenom'), null);
+  assert.ok(validateFreeFireIgn('A') !== null);
 
-  // Duplicate captain UID rejected
-  assert.ok(
-    validateTeammates(
-      'Duo',
-      [{ ign: 'Clone', uid: '123456789' }],
-      '123456789'
-    ) !== null
-  );
-
-  // Wrong teammate count for Squad
-  assert.ok(
-    validateTeammates('Squad', [{ ign: 'One', uid: '11111111' }], '123456789') !== null
-  );
+  // Squad and Duo modes require zero teammate inputs
+  assert.equal(validateTeammates('Squad', [], '123456789'), null);
+  assert.equal(validateTeammates('Duo', [], '123456789'), null);
 });
 
 test('canJoinTournament enforces duplicates, full slots, suspension, and deadlines', () => {

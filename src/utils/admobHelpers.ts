@@ -206,3 +206,29 @@ export function buildInitialAndroidFormatStates(
   };
 }
 
+export type RewardedAdOutcome =
+  | 'rewarded'
+  | 'dismissed'
+  | 'failed'
+  | 'offline'
+  | 'disabled'
+  | 'native_unavailable';
+
+/**
+ * Determines whether a withdrawal submission should proceed after attempting a rewarded ad.
+ * Never blocks withdrawals in Web/PWA preview or when the rewarded ad fails/is offline/disabled.
+ * Only pauses if the user started watching a loaded ad on Android and dismissed it early.
+ */
+export function shouldProceedWithWithdrawalAfterRewardedAd(
+  outcome: RewardedAdOutcome
+): { proceed: true } | { proceed: false; reason: string } {
+  if (outcome === 'dismissed') {
+    return {
+      proceed: false,
+      reason: 'Ad closed early. Watch the full rewarded ad to submit your withdrawal request.',
+    };
+  }
+  return { proceed: true };
+}
+
+

@@ -9,12 +9,26 @@ import {
   extractAdMobPublisherId,
   resolveEffectiveAdMobConfig,
   shouldDisplayBannerAtScreen,
+  shouldProceedWithWithdrawalAfterRewardedAd,
   validateAdMobAppId,
   validateAdMobUnitId,
   validateAdSenseClientId,
   validateInterstitialCooldownSeconds,
 } from './admobHelpers';
 import type { AdminSettings } from '../types/esports';
+
+test('official Google AdMob test ad unit IDs match banner, interstitial, and rewarded test units', () => {
+  assert.equal(ADMOB_OFFICIAL_TEST_IDS.banner, 'ca-app-pub-3940256099942544/6300978111');
+  assert.equal(ADMOB_OFFICIAL_TEST_IDS.interstitial, 'ca-app-pub-3940256099942544/1033173712');
+  assert.equal(ADMOB_OFFICIAL_TEST_IDS.rewarded, 'ca-app-pub-3940256099942544/5224354917');
+});
+
+test('real production AdMob ad unit IDs match Spider Esports banner, interstitial, and rewarded units', () => {
+  assert.equal(ADMOB_PRODUCTION_CREDENTIALS.appId, 'ca-app-pub-5622658710249262~5604296331');
+  assert.equal(ADMOB_PRODUCTION_CREDENTIALS.banner, 'ca-app-pub-5622658710249262/8095883252');
+  assert.equal(ADMOB_PRODUCTION_CREDENTIALS.interstitial, 'ca-app-pub-5622658710249262/2009646191');
+  assert.equal(ADMOB_PRODUCTION_CREDENTIALS.rewarded, 'ca-app-pub-5622658710249262/8948644970');
+});
 
 test('validateAdMobAppId, validateAdMobUnitId, and cooldown validation enforce valid Google AdMob formats', () => {
   assert.equal(validateAdMobAppId(ADMOB_OFFICIAL_TEST_IDS.appId), null);
@@ -72,6 +86,8 @@ test('resolveEffectiveAdMobConfig forces Google test IDs in test/debug mode and 
   assert.equal(testResolved.isTestMode, true);
   assert.equal(testResolved.appId, ADMOB_OFFICIAL_TEST_IDS.appId);
   assert.equal(testResolved.bannerId, ADMOB_OFFICIAL_TEST_IDS.banner);
+  assert.equal(testResolved.interstitialId, ADMOB_OFFICIAL_TEST_IDS.interstitial);
+  assert.equal(testResolved.rewardedId, ADMOB_OFFICIAL_TEST_IDS.rewarded);
   assert.equal(testResolved.interstitialCooldownMs, 120_000);
 
   const forcedDebugResolved = resolveEffectiveAdMobConfig(
@@ -80,6 +96,7 @@ test('resolveEffectiveAdMobConfig forces Google test IDs in test/debug mode and 
   );
   assert.equal(forcedDebugResolved.isTestMode, true);
   assert.equal(forcedDebugResolved.bannerId, ADMOB_OFFICIAL_TEST_IDS.banner);
+  assert.equal(forcedDebugResolved.rewardedId, ADMOB_OFFICIAL_TEST_IDS.rewarded);
 
   const prodResolved = resolveEffectiveAdMobConfig({ ...baseSettings, adMobMode: 'production' });
   assert.equal(prodResolved.isTestMode, false);
@@ -124,4 +141,15 @@ test('buildInitialAndroidFormatStates never marks ads loaded on SDK init and can
   assert.equal(canDisplayLoadedAd('disabled'), false);
   assert.equal(canDisplayLoadedAd('offline'), false);
   assert.equal(canDisplayLoadedAd('loaded'), true);
+});
+
+test('shouldProceedWithWithdrawalAfterRewardedAd never blocks failed ads or web preview and pauses only on early dismiss', () => {
+  assert.deepEqual(shouldProceedWithWithdrawalAfterRewardedAd('rewarded'), { proceed: true });
+  assert.deepEqual(shouldProceedWithWithdrawalAfterRewardedAd('failed'), { proceed: true });
+  assert.deepEqual(shouldProceedWithWithdrawalAfterRewardedAd('offline'), { proceed: true });
+  assert.deepEqual(shouldProceedWithWithdrawalAfterRewardedAd('disabled'), { proceed: true });
+  assert.deepEqual(shouldProceedWithWithdrawalAfterRewardedAd('native_unavailable'), {
+    proceed: true,
+  });
+  assert.equal(shouldProceedWithWithdrawalAfterRewardedAd('dismissed').proceed, false);
 });

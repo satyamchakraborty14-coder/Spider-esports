@@ -16,7 +16,6 @@ import type {
   MatchCredential,
   MatchInfo,
   Registration,
-  TeammateInput,
   Tournament,
   TournamentResult,
   UserProfile,
@@ -25,10 +24,8 @@ import {
   canCancelRegistration,
   canJoinTournament,
   canViewRoomCredentials,
-  getModeDefinition,
   validateFreeFireIgn,
   validateFreeFireUid,
-  validateTeammates,
 } from '../utils/tournamentRules';
 import {
   cancelTournamentRegistration,
@@ -74,8 +71,6 @@ export function MatchDetailsModal({
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [freeFireIgn, setFreeFireIgn] = useState('');
   const [freeFireUid, setFreeFireUid] = useState('');
-  const [teamName, setTeamName] = useState('');
-  const [teammates, setTeammates] = useState<TeammateInput[]>([]);
   const [credentials, setCredentials] = useState<MatchCredential | null>(null);
   const [credError, setCredError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -88,7 +83,6 @@ export function MatchDetailsModal({
     nextFilledSlots: number;
     freeFireIgn: string;
     freeFireUid: string;
-    teamName?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -103,12 +97,6 @@ export function MatchDetailsModal({
     setJustJoined((prev) => (prev?.tournamentId === tournament.id ? prev : null));
     setFreeFireIgn(profile?.freeFireIgn || '');
     setFreeFireUid(profile?.freeFireUid || '');
-    setTeamName('');
-
-    const def = getModeDefinition(tournament.mode);
-    setTeammates(
-      Array.from({ length: def.requiredTeammates }, () => ({ ign: '', uid: '' }))
-    );
 
     const unsub = subscribeTournamentRegistrations(tournament.id, (items) => {
       setRegistrations(items);
@@ -157,7 +145,6 @@ export function MatchDetailsModal({
 
   if (!tournament) return null;
 
-  const modeDef = getModeDefinition(tournament.mode);
   const optimisticJoined = justJoined?.tournamentId === tournament.id ? justJoined : null;
   const displayFilledSlots = Math.min(
     tournament.maxSlots,
@@ -204,11 +191,6 @@ export function MatchDetailsModal({
       setFormError(uidErr);
       return;
     }
-    const mateErr = validateTeammates(tournament.mode, teammates, freeFireUid);
-    if (mateErr) {
-      setFormError(mateErr);
-      return;
-    }
 
     setSubmitting(true);
     try {
@@ -217,8 +199,6 @@ export function MatchDetailsModal({
         profile,
         freeFireIgn,
         freeFireUid,
-        teamName: modeDef.requiredTeammates > 0 ? teamName : undefined,
-        teammates: modeDef.requiredTeammates > 0 ? teammates : undefined,
       });
       setJustJoined({
         tournamentId: tournament.id,
@@ -226,7 +206,6 @@ export function MatchDetailsModal({
         nextFilledSlots: res.nextFilledSlots,
         freeFireIgn: freeFireIgn.trim(),
         freeFireUid: freeFireUid.trim(),
-        teamName: modeDef.requiredTeammates > 0 && teamName.trim() ? teamName.trim() : undefined,
       });
       onSuccessToast(`Joined ${tournament.title}! Slot #${res.slotNumber} confirmed.`);
       onAfterJoinConfirmation?.();
@@ -430,9 +409,6 @@ export function MatchDetailsModal({
               <span className="font-mono-tabular text-white">
                 {myRegistration?.freeFireUid ?? optimisticJoined?.freeFireUid}
               </span>
-              {(myRegistration?.teamName ?? optimisticJoined?.teamName)
-                ? ` · Team: ${myRegistration?.teamName ?? optimisticJoined?.teamName}`
-                : ''}
             </p>
             {!cancelEligibility.allowed && cancelEligibility.reason && (
               <p className="text-xs text-zinc-400">{cancelEligibility.reason}</p>
@@ -491,58 +467,6 @@ export function MatchDetailsModal({
                     />
                   </div>
                 </div>
-
-                {modeDef.requiredTeammates > 0 && (
-                  <div className="space-y-3 pt-2 border-t border-white/10">
-                    <div>
-                      <label htmlFor="join-team" className="block text-xs font-medium text-zinc-300 mb-1.5">
-                        Team / Squad Name (Optional)
-                      </label>
-                      <input
-                        id="join-team"
-                        type="text"
-                        value={teamName}
-                        onChange={(e) => setTeamName(e.target.value)}
-                        placeholder="e.g. Arachnid Five"
-                        className="w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#121216] text-sm text-white focus:outline-none focus:border-[#E11D48]"
-                      />
-                    </div>
-                    <p className="text-xs font-medium text-zinc-400">
-                      Required Teammates ({modeDef.requiredTeammates})
-                    </p>
-                    {teammates.map((mate, idx) => (
-                      <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <input
-                          type="text"
-                          required
-                          aria-label={`Teammate ${idx + 1} IGN`}
-                          value={mate.ign}
-                          onChange={(e) => {
-                            const next = [...teammates];
-                            next[idx] = { ...next[idx], ign: e.target.value };
-                            setTeammates(next);
-                          }}
-                          placeholder={`Teammate ${idx + 1} IGN`}
-                          className="w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#121216] text-sm text-white focus:outline-none focus:border-[#E11D48]"
-                        />
-                        <input
-                          type="text"
-                          required
-                          inputMode="numeric"
-                          aria-label={`Teammate ${idx + 1} UID`}
-                          value={mate.uid}
-                          onChange={(e) => {
-                            const next = [...teammates];
-                            next[idx] = { ...next[idx], uid: e.target.value };
-                            setTeammates(next);
-                          }}
-                          placeholder={`Teammate ${idx + 1} UID`}
-                          className="w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#121216] text-sm font-mono-tabular text-white focus:outline-none focus:border-[#E11D48]"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
 
                 {formError && (
                   <p role="alert" className="text-xs text-[#F43F5E] font-medium">
@@ -619,7 +543,7 @@ export function MatchDetailsModal({
                 >
                   <div className="min-w-0">
                     <p className="font-semibold text-white truncate">
-                      {reg.teamName ? `${reg.teamName} (${reg.freeFireIgn})` : reg.freeFireIgn}
+                      {reg.freeFireIgn}
                     </p>
                     <p className="text-zinc-400 font-mono-tabular">UID: {reg.freeFireUid}</p>
                   </div>

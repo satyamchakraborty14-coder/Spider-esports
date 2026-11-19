@@ -18,6 +18,7 @@ import {
   type AdBannerScreen,
   type AdLifecycleState,
   type AndroidSdkState,
+  type RewardedAdOutcome,
 } from '../utils/admobHelpers';
 
 export type AdMobRuntimeChannel =
@@ -60,7 +61,7 @@ export interface AdMobIntegrationStatus {
 }
 
 export interface RewardedAdResult {
-  outcome: 'rewarded' | 'dismissed' | 'failed' | 'offline' | 'disabled' | 'native_unavailable';
+  outcome: RewardedAdOutcome;
   error?: string;
 }
 
@@ -672,9 +673,10 @@ export async function showNativeInterstitialAd(
   }
 }
 
-export async function showRewardedAdForCosmetic(
+async function runNativeRewardedAd(
   settings: AdminSettings,
-  consentAccepted: boolean
+  consentAccepted: boolean,
+  dismissMessage: string
 ): Promise<RewardedAdResult> {
   const config = resolveEffectiveAdMobConfig(settings, { forceTestMode: isDebugEnvironment() });
   if (!config.rewardedAdsEnabled) {
@@ -751,7 +753,7 @@ export async function showRewardedAdForCosmetic(
     }
     return {
       outcome: 'dismissed',
-      error: 'Ad closed before completion. Watch the full ad to unlock the cosmetic emblem.',
+      error: dismissMessage,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Rewarded ad failed to load.';
@@ -761,6 +763,28 @@ export async function showRewardedAdForCosmetic(
     await rewardHandle?.remove().catch(() => undefined);
     rewardedInFlight = false;
   }
+}
+
+export async function showRewardedAdForCosmetic(
+  settings: AdminSettings,
+  consentAccepted: boolean
+): Promise<RewardedAdResult> {
+  return runNativeRewardedAd(
+    settings,
+    consentAccepted,
+    'Ad closed before completion. Watch the full ad to unlock the cosmetic emblem.'
+  );
+}
+
+export async function showRewardedAdForWithdrawal(
+  settings: AdminSettings,
+  consentAccepted: boolean
+): Promise<RewardedAdResult> {
+  return runNativeRewardedAd(
+    settings,
+    consentAccepted,
+    'Ad closed early. Watch the full rewarded ad to submit your withdrawal request.'
+  );
 }
 
 export function registerAdMobLifecycle(params: {

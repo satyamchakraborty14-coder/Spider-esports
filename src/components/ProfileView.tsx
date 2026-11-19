@@ -30,7 +30,11 @@ import {
   unlockRewardedAdCosmetic,
   updatePlayerIdentity,
 } from '../lib/firestoreService';
-import { showRewardedAdForCosmetic } from '../lib/admobBridge';
+import {
+  showRewardedAdForCosmetic,
+  showRewardedAdForWithdrawal,
+} from '../lib/admobBridge';
+import { shouldProceedWithWithdrawalAfterRewardedAd } from '../utils/admobHelpers';
 import { BRAND_ASSETS, resolveBundledAssetUrl } from '../lib/seedData';
 import type {
   AdminSettings,
@@ -312,6 +316,14 @@ export function ProfileView({
 
     setSubmittingWithdraw(true);
     try {
+      const adRes = await showRewardedAdForWithdrawal(adminSettings, consentAccepted);
+      const gate = shouldProceedWithWithdrawalAfterRewardedAd(adRes.outcome);
+      if (!gate.proceed) {
+        setWithdrawError(gate.reason);
+        onToast(gate.reason);
+        return;
+      }
+
       await requestCoinWithdrawal({
         profile,
         amountCoins: validation.coins,
@@ -704,11 +716,14 @@ export function ProfileView({
                 className="w-full min-h-[46px] rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] disabled:opacity-45 disabled:cursor-not-allowed text-xs font-semibold text-white transition-colors"
               >
                 {submittingWithdraw
-                  ? 'Submitting Request...'
+                  ? 'Processing Request...'
                   : userCoins < MIN_WITHDRAWAL_COINS
                     ? `Need ${MIN_WITHDRAWAL_COINS.toLocaleString()} Coins (₹10) to Withdraw`
                     : `Request ${formatRupees(previewPayout)} Withdrawal`}
               </button>
+              <p className="text-[11px] text-zinc-400">
+                Android APK plays a rewarded ad when submitting a withdrawal request; payouts always submit safely if no ad is available.
+              </p>
             </form>
 
             {/* Withdrawal History */}
@@ -1204,7 +1219,7 @@ export function ProfileView({
           <div className="rounded-lg bg-[#09090B] border border-white/10 p-4 text-xs text-zinc-300 space-y-2 leading-relaxed">
             <p className="font-semibold text-white">SPIDER ESPORTS Privacy Policy</p>
             <p>
-              We collect only your email address (isolated in private Firestore storage), unique username, and Free Fire IGN/UID to verify identity and manage free tournament brackets. Google AdMob and Google User Messaging Platform (UMP) serve policy-compliant ads and honor your consent choices. Rewarded ads only unlock non-cash profile emblems (never coins or cash). You may delete your account and personal records permanently at any time.
+              We collect only your email address (isolated in private Firestore storage), unique username, and Free Fire IGN/UID to verify identity and manage free tournament brackets. Google AdMob and Google User Messaging Platform (UMP) serve policy-compliant ads and honor your consent choices. Rewarded ads may unlock optional non-cash profile emblems or play during withdrawal submission (never minting extra Spider Coins or cash). You may delete your account and personal records permanently at any time.
             </p>
           </div>
         )}
@@ -1224,7 +1239,7 @@ export function ProfileView({
             <ul className="list-disc pl-5 space-y-1">
               <li>Single Currency: Spider Coins are the only redeemable reward unit in SPIDER ESPORTS.</li>
               <li>Earning Rules: Coins are credited strictly by admins for verified match play, eliminations, and tournament wins.</li>
-              <li>Ad Policy: Rewarded ads never grant Spider Coins, cash, prizes, or tournament entry — only optional non-cash profile emblems.</li>
+              <li>Ad Policy: Rewarded ads never mint extra Spider Coins or cash — they unlock optional non-cash profile emblems or accompany withdrawal submissions in the Android app.</li>
               <li>Conversion Rate: 100 Spider Coins = ₹10 (minimum withdrawal: 100 Coins).</li>
               <li>Verification: Admins verify match results and withdrawal payout details (UPI / Bank) before approval.</li>
             </ul>

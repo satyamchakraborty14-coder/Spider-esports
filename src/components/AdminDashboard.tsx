@@ -2425,7 +2425,7 @@ export function AdminDashboard({
               <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-[#09090B] px-3.5 py-2.5 cursor-pointer">
                 <div>
                   <span className="block text-xs font-semibold text-white">Rewarded Ads</span>
-                  <span className="block text-[11px] text-zinc-400">Cosmetic emblem only (0 Coins)</span>
+                  <span className="block text-[11px] text-zinc-400">Withdrawals &amp; cosmetic emblem</span>
                 </div>
                 <input
                   type="checkbox"

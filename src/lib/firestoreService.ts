@@ -57,7 +57,6 @@ import type {
   ProfileThemeId,
   Registration,
   ResultStanding,
-  TeammateInput,
   Tournament,
   TournamentResult,
   UserProfile,
@@ -706,13 +705,11 @@ export async function joinTournamentInFirestore(params: {
   profile: UserProfile;
   freeFireIgn: string;
   freeFireUid: string;
-  teamName?: string;
-  teammates?: TeammateInput[];
 }): Promise<{ slotNumber: number; nextFilledSlots: number }> {
   if (!auth.currentUser || !auth.currentUser.emailVerified) {
     throw new Error('Please verify your email address in your Profile before joining tournaments.');
   }
-  const { tournament, profile, freeFireIgn, freeFireUid, teamName, teammates } = params;
+  const { tournament, profile, freeFireIgn, freeFireUid } = params;
   const regId = `${tournament.id}_${profile.uid}`;
   const tRef = doc(db, 'tournaments', tournament.id);
   const regRef = doc(db, 'registrations', regId);
@@ -787,8 +784,6 @@ export async function joinTournamentInFirestore(params: {
         status: 'confirmed',
         updatedAt: serverTimestamp(),
       };
-      if (teamName?.trim()) regPayload.teamName = teamName.trim();
-      if (teammates && teammates.length > 0) regPayload.teammates = teammates;
 
       if (regSnap.exists()) {
         tx.update(regRef, regPayload);

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Award, Medal, Trophy } from 'lucide-react';
-import type { AdminSettings, LeaderboardEntry, TournamentResult } from '../types/esports';
+import type { LeaderboardEntry, TournamentResult } from '../types/esports';
 import { BRAND_ASSETS, resolveBundledAssetUrl } from '../lib/seedData';
 import {
   calculateRupeesFromCoins,
@@ -8,13 +8,11 @@ import {
   getPlayerLeaderboardRank,
   sortLeaderboard,
 } from '../utils/coinSystem';
-import { AdMobBannerSlot } from './AdMobUnits';
 
 interface LeaderboardViewProps {
   entries: LeaderboardEntry[];
   results: TournamentResult[];
   currentUserId?: string;
-  adminSettings: AdminSettings;
   onNavigateResults: () => void;
 }
 
@@ -22,7 +20,6 @@ export function LeaderboardView({
   entries,
   results,
   currentUserId,
-  adminSettings,
   onNavigateResults,
 }: LeaderboardViewProps) {
   const [scope, setScope] = useState<'global' | 'weekly'>('global');
@@ -202,12 +199,6 @@ export function LeaderboardView({
           </div>
         )}
       </section>
-
-      <AdMobBannerSlot
-        settings={adminSettings}
-        screen="leaderboard"
-        placementLabel="Leaderboard Footer"
-      />
     </div>
   );
 }

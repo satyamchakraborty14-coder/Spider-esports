@@ -23,6 +23,7 @@ interface WithdrawalHistoryModalProps {
   open: boolean;
   withdrawals: WithdrawalRequest[];
   availableCoins: number;
+  winningCoins?: number;
   initialFilter?: WithdrawalFilterStatus;
   onClose: () => void;
   onToast?: (msg: string) => void;
@@ -32,10 +33,13 @@ export function WithdrawalHistoryModal({
   open,
   withdrawals,
   availableCoins,
+  winningCoins,
   initialFilter = 'all',
   onClose,
   onToast,
 }: WithdrawalHistoryModalProps) {
+  const redeemableWinningCoins =
+    typeof winningCoins === 'number' ? Math.max(0, Math.min(availableCoins, winningCoins)) : availableCoins;
   const [statusFilter, setStatusFilter] = useState<WithdrawalFilterStatus>(initialFilter);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -102,14 +106,14 @@ export function WithdrawalHistoryModal({
               Withdrawal History
             </h2>
             <p className="text-xs text-zinc-400">
-              Detailed status of your Spider Coin redemption requests (100 Coins = ₹10).
+              Detailed status of your winning-prize redemption requests (1 Coin = ₹1 · Min ₹50).
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <div className="hidden sm:block text-right rounded-lg border border-white/10 bg-[#09090B] px-3 py-1.5 tabular-nums">
-              <p className="text-[10px] uppercase tracking-wider text-zinc-400">Wallet Balance</p>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-400">Winning Prize (Redeemable)</p>
               <p className="text-xs font-bold text-amber-400">
-                {availableCoins.toLocaleString()} Coins ({formatRupees(calculateRupeesFromCoins(availableCoins))})
+                {redeemableWinningCoins.toLocaleString()} Coins ({formatRupees(calculateRupeesFromCoins(redeemableWinningCoins))})
               </p>
             </div>
             <button
@@ -183,7 +187,7 @@ export function WithdrawalHistoryModal({
               <Wallet className="w-8 h-8 text-zinc-500 mx-auto" />
               <p className="text-sm font-semibold text-white">No withdrawal requests yet</p>
               <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                Earn at least 100 Spider Coins (₹10) from free Fire tournaments, then submit a UPI or Bank payout request from your Profile wallet.
+                Win at least 50 Spider Coins (₹50) in tournaments in your SPIDER ESPORTS wallet, then submit a UPI or Bank payout request from your Profile wallet.
               </p>
             </div>
           ) : visibleWithdrawals.length === 0 ? (

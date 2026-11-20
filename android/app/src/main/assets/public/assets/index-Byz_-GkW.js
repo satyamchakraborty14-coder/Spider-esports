@@ -11430,518 +11430,9 @@ var require_client = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	checkDCE();
 	module.exports = require_react_dom_client_production();
 }));
-// node_modules/@capacitor/core/dist/index.js
+// node_modules/@firebase/util/dist/postinstall.mjs
 var import_react = require_react();
 var import_client = require_client();
-/*! Capacitor: https://capacitorjs.com/ - MIT License */
-var ExceptionCode;
-(function(ExceptionCode) {
-	/**
-	* API is not implemented.
-	*
-	* This usually means the API can't be used because it is not implemented for
-	* the current platform.
-	*/
-	ExceptionCode["Unimplemented"] = "UNIMPLEMENTED";
-	/**
-	* API is not available.
-	*
-	* This means the API can't be used right now because:
-	*   - it is currently missing a prerequisite, such as network connectivity
-	*   - it requires a particular platform or browser version
-	*/
-	ExceptionCode["Unavailable"] = "UNAVAILABLE";
-})(ExceptionCode || (ExceptionCode = {}));
-var CapacitorException = class extends Error {
-	constructor(message, code, data) {
-		super(message);
-		this.message = message;
-		this.code = code;
-		this.data = data;
-	}
-};
-var getPlatformId = (win) => {
-	var _a, _b;
-	if (win === null || win === void 0 ? void 0 : win.androidBridge) return "android";
-	else if ((_b = (_a = win === null || win === void 0 ? void 0 : win.webkit) === null || _a === void 0 ? void 0 : _a.messageHandlers) === null || _b === void 0 ? void 0 : _b.bridge) return "ios";
-	else return "web";
-};
-var createCapacitor = (win) => {
-	const capCustomPlatform = win.CapacitorCustomPlatform || null;
-	const cap = win.Capacitor || {};
-	const Plugins = cap.Plugins = cap.Plugins || {};
-	const getPlatform = () => {
-		return capCustomPlatform !== null ? capCustomPlatform.name : getPlatformId(win);
-	};
-	const isNativePlatform = () => getPlatform() !== "web";
-	const isPluginAvailable = (pluginName) => {
-		const plugin = registeredPlugins.get(pluginName);
-		if (plugin === null || plugin === void 0 ? void 0 : plugin.platforms.has(getPlatform())) return true;
-		if (getPluginHeader(pluginName)) return true;
-		return false;
-	};
-	const getPluginHeader = (pluginName) => {
-		var _a;
-		return (_a = cap.PluginHeaders) === null || _a === void 0 ? void 0 : _a.find((h) => h.name === pluginName);
-	};
-	const handleError = (err) => win.console.error(err);
-	const registeredPlugins = /* @__PURE__ */ new Map();
-	const registerPlugin = (pluginName, jsImplementations = {}) => {
-		const registeredPlugin = registeredPlugins.get(pluginName);
-		if (registeredPlugin) {
-			console.warn(`Capacitor plugin "${pluginName}" already registered. Cannot register plugins twice.`);
-			return registeredPlugin.proxy;
-		}
-		const platform = getPlatform();
-		const pluginHeader = getPluginHeader(pluginName);
-		let jsImplementation;
-		const loadPluginImplementation = async () => {
-			if (!jsImplementation && platform in jsImplementations) jsImplementation = typeof jsImplementations[platform] === "function" ? jsImplementation = await jsImplementations[platform]() : jsImplementation = jsImplementations[platform];
-			else if (capCustomPlatform !== null && !jsImplementation && "web" in jsImplementations) jsImplementation = typeof jsImplementations["web"] === "function" ? jsImplementation = await jsImplementations["web"]() : jsImplementation = jsImplementations["web"];
-			return jsImplementation;
-		};
-		const createPluginMethod = (impl, prop) => {
-			var _a, _b;
-			if (pluginHeader) {
-				const methodHeader = pluginHeader === null || pluginHeader === void 0 ? void 0 : pluginHeader.methods.find((m) => prop === m.name);
-				if (methodHeader) {
-					if (methodHeader.rtype === "promise") return (options) => cap.nativePromise(pluginName, prop.toString(), options);
-					else return (options, callback) => cap.nativeCallback(pluginName, prop.toString(), options, callback);
-				} else if (impl) return (_a = impl[prop]) === null || _a === void 0 ? void 0 : _a.bind(impl);
-			} else if (impl) return (_b = impl[prop]) === null || _b === void 0 ? void 0 : _b.bind(impl);
-			else throw new CapacitorException(`"${pluginName}" plugin is not implemented on ${platform}`, ExceptionCode.Unimplemented);
-		};
-		const createPluginMethodWrapper = (prop) => {
-			let remove;
-			const wrapper = (...args) => {
-				const p = loadPluginImplementation().then((impl) => {
-					const fn = createPluginMethod(impl, prop);
-					if (fn) {
-						const p = fn(...args);
-						remove = p === null || p === void 0 ? void 0 : p.remove;
-						return p;
-					} else throw new CapacitorException(`"${pluginName}.${prop}()" is not implemented on ${platform}`, ExceptionCode.Unimplemented);
-				});
-				if (prop === "addListener") p.remove = async () => remove();
-				return p;
-			};
-			wrapper.toString = () => `${prop.toString()}() { [capacitor code] }`;
-			Object.defineProperty(wrapper, "name", {
-				value: prop,
-				writable: false,
-				configurable: false
-			});
-			return wrapper;
-		};
-		const addListener = createPluginMethodWrapper("addListener");
-		const removeListener = createPluginMethodWrapper("removeListener");
-		const addListenerNative = (eventName, callback) => {
-			const call = addListener({ eventName }, callback).then((callbackId) => callbackId);
-			const remove = async () => {
-				const callbackId = await call;
-				await removeListener({
-					eventName,
-					callbackId
-				});
-			};
-			const p = new Promise((resolve) => call.then(() => resolve({ remove })));
-			p.remove = async () => {
-				console.warn(`Using addListener() without 'await' is deprecated.`);
-				await remove();
-			};
-			return p;
-		};
-		const proxy = new Proxy({}, { get(_, prop) {
-			switch (prop) {
-				case "$$typeof": return;
-				case "toJSON": return () => ({});
-				case "addListener": return pluginHeader ? addListenerNative : addListener;
-				case "removeListener": return removeListener;
-				default: return createPluginMethodWrapper(prop);
-			}
-		} });
-		Plugins[pluginName] = proxy;
-		registeredPlugins.set(pluginName, {
-			name: pluginName,
-			proxy,
-			platforms: /* @__PURE__ */ new Set([...Object.keys(jsImplementations), ...pluginHeader ? [platform] : []])
-		});
-		return proxy;
-	};
-	if (!cap.convertFileSrc) cap.convertFileSrc = (filePath) => filePath;
-	cap.getPlatform = getPlatform;
-	cap.handleError = handleError;
-	cap.isNativePlatform = isNativePlatform;
-	cap.isPluginAvailable = isPluginAvailable;
-	cap.registerPlugin = registerPlugin;
-	cap.Exception = CapacitorException;
-	cap.DEBUG = !!cap.DEBUG;
-	cap.isLoggingEnabled = !!cap.isLoggingEnabled;
-	return cap;
-};
-var initCapacitorGlobal = (win) => win.Capacitor = createCapacitor(win);
-var Capacitor = /*#__PURE__*/ initCapacitorGlobal(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : {});
-var registerPlugin = Capacitor.registerPlugin;
-/**
-* Base class web plugins should extend.
-*/
-var WebPlugin = class {
-	constructor() {
-		this.listeners = {};
-		this.retainedEventArguments = {};
-		this.windowListeners = {};
-	}
-	addListener(eventName, listenerFunc) {
-		let firstListener = false;
-		if (!this.listeners[eventName]) {
-			this.listeners[eventName] = [];
-			firstListener = true;
-		}
-		this.listeners[eventName].push(listenerFunc);
-		const windowListener = this.windowListeners[eventName];
-		if (windowListener && !windowListener.registered) this.addWindowListener(windowListener);
-		if (firstListener) this.sendRetainedArgumentsForEvent(eventName);
-		const remove = async () => this.removeListener(eventName, listenerFunc);
-		return Promise.resolve({ remove });
-	}
-	async removeAllListeners() {
-		this.listeners = {};
-		for (const listener in this.windowListeners) this.removeWindowListener(this.windowListeners[listener]);
-		this.windowListeners = {};
-	}
-	notifyListeners(eventName, data, retainUntilConsumed) {
-		const listeners = this.listeners[eventName];
-		if (!listeners) {
-			if (retainUntilConsumed) {
-				let args = this.retainedEventArguments[eventName];
-				if (!args) args = [];
-				args.push(data);
-				this.retainedEventArguments[eventName] = args;
-			}
-			return;
-		}
-		listeners.forEach((listener) => listener(data));
-	}
-	hasListeners(eventName) {
-		var _a;
-		return !!((_a = this.listeners[eventName]) === null || _a === void 0 ? void 0 : _a.length);
-	}
-	registerWindowListener(windowEventName, pluginEventName) {
-		this.windowListeners[pluginEventName] = {
-			registered: false,
-			windowEventName,
-			pluginEventName,
-			handler: (event) => {
-				this.notifyListeners(pluginEventName, event);
-			}
-		};
-	}
-	unimplemented(msg = "not implemented") {
-		return new Capacitor.Exception(msg, ExceptionCode.Unimplemented);
-	}
-	unavailable(msg = "not available") {
-		return new Capacitor.Exception(msg, ExceptionCode.Unavailable);
-	}
-	async removeListener(eventName, listenerFunc) {
-		const listeners = this.listeners[eventName];
-		if (!listeners) return;
-		const index = listeners.indexOf(listenerFunc);
-		if (index !== -1) this.listeners[eventName].splice(index, 1);
-		if (!this.listeners[eventName].length) this.removeWindowListener(this.windowListeners[eventName]);
-	}
-	addWindowListener(handle) {
-		window.addEventListener(handle.windowEventName, handle.handler);
-		handle.registered = true;
-	}
-	removeWindowListener(handle) {
-		if (!handle) return;
-		window.removeEventListener(handle.windowEventName, handle.handler);
-		handle.registered = false;
-	}
-	sendRetainedArgumentsForEvent(eventName) {
-		const args = this.retainedEventArguments[eventName];
-		if (!args) return;
-		delete this.retainedEventArguments[eventName];
-		args.forEach((arg) => {
-			this.notifyListeners(eventName, arg);
-		});
-	}
-};
-/******** END WEB VIEW PLUGIN ********/
-/******** COOKIES PLUGIN ********/
-/**
-* Safely web encode a string value (inspired by js-cookie)
-* @param str The string value to encode
-*/
-var encode = (str) => encodeURIComponent(str).replace(/%(2[346B]|5E|60|7C)/g, decodeURIComponent).replace(/[()]/g, escape);
-/**
-* Safely web decode a string value (inspired by js-cookie)
-* @param str The string value to decode
-*/
-var decode = (str) => str.replace(/(%[\dA-F]{2})+/gi, decodeURIComponent);
-var CapacitorCookiesPluginWeb = class extends WebPlugin {
-	async getCookies() {
-		const cookies = document.cookie;
-		const cookieMap = {};
-		cookies.split(";").forEach((cookie) => {
-			if (cookie.length <= 0) return;
-			let [key, value] = cookie.replace(/=/, "CAP_COOKIE").split("CAP_COOKIE");
-			key = decode(key).trim();
-			value = decode(value).trim();
-			cookieMap[key] = value;
-		});
-		return cookieMap;
-	}
-	async setCookie(options) {
-		try {
-			const encodedKey = encode(options.key);
-			const encodedValue = encode(options.value);
-			const expires = options.expires ? `; expires=${options.expires.replace("expires=", "")}` : "";
-			const path = (options.path || "/").replace("path=", "");
-			const domain = options.url != null && options.url.length > 0 ? `domain=${options.url}` : "";
-			document.cookie = `${encodedKey}=${encodedValue || ""}${expires}; path=${path}; ${domain};`;
-		} catch (error) {
-			return Promise.reject(error);
-		}
-	}
-	async deleteCookie(options) {
-		try {
-			document.cookie = `${options.key}=; Max-Age=0`;
-		} catch (error) {
-			return Promise.reject(error);
-		}
-	}
-	async clearCookies() {
-		try {
-			const cookies = document.cookie.split(";") || [];
-			for (const cookie of cookies) document.cookie = cookie.replace(/^ +/, "").replace(/=.*/, `=;expires=${(/* @__PURE__ */ new Date()).toUTCString()};path=/`);
-		} catch (error) {
-			return Promise.reject(error);
-		}
-	}
-	async clearAllCookies() {
-		try {
-			await this.clearCookies();
-		} catch (error) {
-			return Promise.reject(error);
-		}
-	}
-};
-registerPlugin("CapacitorCookies", { web: () => new CapacitorCookiesPluginWeb() });
-/**
-* Read in a Blob value and return it as a base64 string
-* @param blob The blob value to convert to a base64 string
-*/
-var readBlobAsBase64 = async (blob) => new Promise((resolve, reject) => {
-	const reader = new FileReader();
-	reader.onload = () => {
-		const base64String = reader.result;
-		resolve(base64String.indexOf(",") >= 0 ? base64String.split(",")[1] : base64String);
-	};
-	reader.onerror = (error) => reject(error);
-	reader.readAsDataURL(blob);
-});
-/**
-* Normalize an HttpHeaders map by lowercasing all of the values
-* @param headers The HttpHeaders object to normalize
-*/
-var normalizeHttpHeaders = (headers = {}) => {
-	const originalKeys = Object.keys(headers);
-	return Object.keys(headers).map((k) => k.toLocaleLowerCase()).reduce((acc, key, index) => {
-		acc[key] = headers[originalKeys[index]];
-		return acc;
-	}, {});
-};
-/**
-* Builds a string of url parameters that
-* @param params A map of url parameters
-* @param shouldEncode true if you should encodeURIComponent() the values (true by default)
-*/
-var buildUrlParams = (params, shouldEncode = true) => {
-	if (!params) return null;
-	return Object.entries(params).reduce((accumulator, entry) => {
-		const [key, value] = entry;
-		let encodedValue;
-		let item;
-		if (Array.isArray(value)) {
-			item = "";
-			value.forEach((str) => {
-				encodedValue = shouldEncode ? encodeURIComponent(str) : str;
-				item += `${key}=${encodedValue}&`;
-			});
-			item.slice(0, -1);
-		} else {
-			encodedValue = shouldEncode ? encodeURIComponent(value) : value;
-			item = `${key}=${encodedValue}`;
-		}
-		return `${accumulator}&${item}`;
-	}, "").substr(1);
-};
-/**
-* Build the RequestInit object based on the options passed into the initial request
-* @param options The Http plugin options
-* @param extra Any extra RequestInit values
-*/
-var buildRequestInit = (options, extra = {}) => {
-	const output = Object.assign({
-		method: options.method || "GET",
-		headers: options.headers
-	}, extra);
-	const type = normalizeHttpHeaders(options.headers)["content-type"] || "";
-	if (typeof options.data === "string") output.body = options.data;
-	else if (type.includes("application/x-www-form-urlencoded")) {
-		const params = new URLSearchParams();
-		for (const [key, value] of Object.entries(options.data || {})) params.set(key, value);
-		output.body = params.toString();
-	} else if (type.includes("multipart/form-data") || options.data instanceof FormData) {
-		const form = new FormData();
-		if (options.data instanceof FormData) options.data.forEach((value, key) => {
-			form.append(key, value);
-		});
-		else for (const key of Object.keys(options.data)) form.append(key, options.data[key]);
-		output.body = form;
-		const headers = new Headers(output.headers);
-		headers.delete("content-type");
-		output.headers = headers;
-	} else if (type.includes("application/json") || typeof options.data === "object") output.body = JSON.stringify(options.data);
-	return output;
-};
-var CapacitorHttpPluginWeb = class extends WebPlugin {
-	/**
-	* Perform an Http request given a set of options
-	* @param options Options to build the HTTP request
-	*/
-	async request(options) {
-		const requestInit = buildRequestInit(options, options.webFetchExtra);
-		const urlParams = buildUrlParams(options.params, options.shouldEncodeUrlParams);
-		const url = urlParams ? `${options.url}?${urlParams}` : options.url;
-		const response = await fetch(url, requestInit);
-		const contentType = response.headers.get("content-type") || "";
-		let { responseType = "text" } = response.ok ? options : {};
-		if (contentType.includes("application/json")) responseType = "json";
-		let data;
-		let blob;
-		switch (responseType) {
-			case "arraybuffer":
-			case "blob":
-				blob = await response.blob();
-				data = await readBlobAsBase64(blob);
-				break;
-			case "json":
-				data = await response.json();
-				break;
-			default: data = await response.text();
-		}
-		const headers = {};
-		response.headers.forEach((value, key) => {
-			headers[key] = value;
-		});
-		return {
-			data,
-			headers,
-			status: response.status,
-			url: response.url
-		};
-	}
-	/**
-	* Perform an Http GET request given a set of options
-	* @param options Options to build the HTTP request
-	*/
-	async get(options) {
-		return this.request(Object.assign(Object.assign({}, options), { method: "GET" }));
-	}
-	/**
-	* Perform an Http POST request given a set of options
-	* @param options Options to build the HTTP request
-	*/
-	async post(options) {
-		return this.request(Object.assign(Object.assign({}, options), { method: "POST" }));
-	}
-	/**
-	* Perform an Http PUT request given a set of options
-	* @param options Options to build the HTTP request
-	*/
-	async put(options) {
-		return this.request(Object.assign(Object.assign({}, options), { method: "PUT" }));
-	}
-	/**
-	* Perform an Http PATCH request given a set of options
-	* @param options Options to build the HTTP request
-	*/
-	async patch(options) {
-		return this.request(Object.assign(Object.assign({}, options), { method: "PATCH" }));
-	}
-	/**
-	* Perform an Http DELETE request given a set of options
-	* @param options Options to build the HTTP request
-	*/
-	async delete(options) {
-		return this.request(Object.assign(Object.assign({}, options), { method: "DELETE" }));
-	}
-};
-registerPlugin("CapacitorHttp", { web: () => new CapacitorHttpPluginWeb() });
-/******** END HTTP PLUGIN ********/
-/******** SYSTEM BARS PLUGIN ********/
-/**
-* Available status bar styles.
-*/
-var SystemBarsStyle;
-(function(SystemBarsStyle) {
-	/**
-	* Light system bar content on a dark background.
-	*
-	* @since 8.0.0
-	*/
-	SystemBarsStyle["Dark"] = "DARK";
-	/**
-	* For dark system bar content on a light background.
-	*
-	* @since 8.0.0
-	*/
-	SystemBarsStyle["Light"] = "LIGHT";
-	/**
-	* The style is based on the device appearance or the underlying content.
-	* If the device is using Dark mode, the system bars content will be light.
-	* If the device is using Light mode, the system bars content will be dark.
-	*
-	* @since 8.0.0
-	*/
-	SystemBarsStyle["Default"] = "DEFAULT";
-})(SystemBarsStyle || (SystemBarsStyle = {}));
-/**
-* Available system bar types.
-*/
-var SystemBarType;
-(function(SystemBarType) {
-	/**
-	* The top status bar on both Android and iOS.
-	*
-	* @since 8.0.0
-	*/
-	SystemBarType["StatusBar"] = "StatusBar";
-	/**
-	* The navigation bar (or gesture bar on iOS) on both Android and iOS.
-	*
-	* @since 8.0.0
-	*/
-	SystemBarType["NavigationBar"] = "NavigationBar";
-})(SystemBarType || (SystemBarType = {}));
-var SystemBarsPluginWeb = class extends WebPlugin {
-	async setStyle() {
-		this.unavailable("not available for web");
-	}
-	async setAnimation() {
-		this.unavailable("not available for web");
-	}
-	async show() {
-		this.unavailable("not available for web");
-	}
-	async hide() {
-		this.unavailable("not available for web");
-	}
-};
-registerPlugin("SystemBars", { web: () => new SystemBarsPluginWeb() });
-// node_modules/@firebase/util/dist/postinstall.mjs
 /**
 * @license
 * Copyright 2025 Google LLC
@@ -22271,7 +21762,7 @@ var WebChannel;
 var EventType;
 var ErrorCode;
 var Stat;
-var Event$1;
+var Event;
 var getStatEventTarget;
 var createWebChannelTransport;
 (function() {
@@ -24306,7 +23797,7 @@ var createWebChannelTransport;
 	getStatEventTarget = webchannel_blob_es2018.getStatEventTarget = function() {
 		return jb();
 	};
-	Event$1 = webchannel_blob_es2018.Event = I;
+	Event = webchannel_blob_es2018.Event = I;
 	Stat = webchannel_blob_es2018.Stat = {
 		jb: 0,
 		mb: 1,
@@ -37390,7 +36881,7 @@ var __PRIVATE_WebChannelConnection = class __PRIVATE_WebChannelConnection extend
 	* Initialize STAT_EVENT listener once. Subsequent calls are a no-op.
 	* getStatEventTarget() returns the same target every time.
 	*/ static Mn() {
-		if (!__PRIVATE_WebChannelConnection.Nn) __PRIVATE_unguardedEventListen(getStatEventTarget(), Event$1.STAT_EVENT, ((e) => {
+		if (!__PRIVATE_WebChannelConnection.Nn) __PRIVATE_unguardedEventListen(getStatEventTarget(), Event.STAT_EVENT, ((e) => {
 			e.stat === Stat.PROXY ? __PRIVATE_logDebug(Gt, "STAT_EVENT: detected buffering proxy") : e.stat === Stat.NOPROXY && __PRIVATE_logDebug(Gt, "STAT_EVENT: detected no buffering proxy");
 		})), __PRIVATE_WebChannelConnection.Nn = true;
 	}
@@ -49540,133 +49031,6 @@ async function testConnection() {
 	}
 }
 testConnection();
-// src/utils/admobHelpers.ts
-var ADMOB_OFFICIAL_TEST_IDS = {
-	publisherId: "pub-3940256099942544",
-	appId: "ca-app-pub-3940256099942544~3347511713",
-	banner: "ca-app-pub-3940256099942544/6300978111",
-	interstitial: "ca-app-pub-3940256099942544/1033173712",
-	rewarded: "ca-app-pub-3940256099942544/5224354917"
-};
-var ADMOB_PRODUCTION_CREDENTIALS = {
-	publisherId: "pub-5622658710249262",
-	appId: "ca-app-pub-5622658710249262~5604296331",
-	banner: "ca-app-pub-5622658710249262/8095883252",
-	interstitial: "ca-app-pub-5622658710249262/2009646191",
-	rewarded: "ca-app-pub-5622658710249262/8948644970",
-	appAdsTxt: "google.com, pub-5622658710249262, DIRECT, f08c47fec0942fa0"
-};
-var ADMOB_APP_ID_REGEX = /^ca-app-pub-\d{16}~\d{10}$/;
-var ADMOB_UNIT_ID_REGEX = /^ca-app-pub-\d{16}\/\d{10}$/;
-var ADSENSE_CLIENT_REGEX = /^ca-pub-\d{16}$/;
-var PUB_ID_EXTRACT_REGEX = /ca-(?:app-)?pub-(\d{16})/;
-function validateAdMobAppId(value) {
-	const trimmed = value.trim();
-	if (!trimmed) return "AdMob App ID is required (format: ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY).";
-	if (!ADMOB_APP_ID_REGEX.test(trimmed)) return "Invalid AdMob App ID. Expected format: ca-app-pub-1234567890123456~1234567890.";
-	return null;
-}
-function validateAdMobUnitId(value, label) {
-	const trimmed = value.trim();
-	if (!trimmed) return `${label} is required (format: ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY).`;
-	if (!ADMOB_UNIT_ID_REGEX.test(trimmed)) return `Invalid ${label}. Expected format: ca-app-pub-1234567890123456/1234567890.`;
-	return null;
-}
-function validateAdSenseClientId(value) {
-	const trimmed = value.trim();
-	if (!trimmed) return null;
-	if (!ADSENSE_CLIENT_REGEX.test(trimmed)) return "Invalid Web AdSense Publisher ID. Expected format: ca-pub-1234567890123456.";
-	return null;
-}
-function validateInterstitialCooldownSeconds(seconds) {
-	if (!Number.isInteger(seconds) || seconds < 30 || seconds > 600) return `Interstitial frequency cooldown must be a whole number between 30 and 600 seconds.`;
-	return null;
-}
-function extractAdMobPublisherId(idOrUnit) {
-	const match = idOrUnit.trim().match(PUB_ID_EXTRACT_REGEX);
-	return match ? `pub-${match[1]}` : null;
-}
-function buildAppAdsTxtLine(idOrUnit) {
-	return `google.com, ${extractAdMobPublisherId(idOrUnit) || ADMOB_PRODUCTION_CREDENTIALS.publisherId}, DIRECT, f08c47fec0942fa0`;
-}
-function resolveEffectiveAdMobConfig(settings, options) {
-	const isTestMode = Boolean(options?.forceTestMode) || settings.adMobMode !== "production";
-	const rawCooldown = settings.interstitialCooldownSeconds ?? 90;
-	const clampedCooldown = Math.min(600, Math.max(30, Math.round(rawCooldown)));
-	const bannerPlacement = settings.bannerPlacement || "all_screens";
-	const bannerAdsEnabled = settings.bannerAdsEnabled !== false;
-	const interstitialAdsEnabled = settings.interstitialAdsEnabled !== false;
-	const rewardedAdsEnabled = settings.rewardedAdsEnabled !== false;
-	if (isTestMode) return {
-		isTestMode: true,
-		appId: ADMOB_OFFICIAL_TEST_IDS.appId,
-		bannerId: ADMOB_OFFICIAL_TEST_IDS.banner,
-		interstitialId: ADMOB_OFFICIAL_TEST_IDS.interstitial,
-		rewardedId: ADMOB_OFFICIAL_TEST_IDS.rewarded,
-		adSenseClientId: settings.adSenseClientId?.trim() || void 0,
-		bannerAdsEnabled,
-		interstitialAdsEnabled,
-		rewardedAdsEnabled,
-		interstitialCooldownSeconds: clampedCooldown,
-		interstitialCooldownMs: clampedCooldown * 1e3,
-		bannerPlacement
-	};
-	return {
-		isTestMode: false,
-		appId: settings.adMobAppId?.trim() || ADMOB_PRODUCTION_CREDENTIALS.appId,
-		bannerId: settings.bannerAdUnitId?.trim() || ADMOB_PRODUCTION_CREDENTIALS.banner,
-		interstitialId: settings.interstitialAdUnitId?.trim() || ADMOB_PRODUCTION_CREDENTIALS.interstitial,
-		rewardedId: settings.rewardedAdUnitId?.trim() || ADMOB_PRODUCTION_CREDENTIALS.rewarded,
-		adSenseClientId: settings.adSenseClientId?.trim() || void 0,
-		bannerAdsEnabled,
-		interstitialAdsEnabled,
-		rewardedAdsEnabled,
-		interstitialCooldownSeconds: clampedCooldown,
-		interstitialCooldownMs: clampedCooldown * 1e3,
-		bannerPlacement
-	};
-}
-function shouldDisplayBannerAtScreen(settings, screen) {
-	if (settings.bannerAdsEnabled === false) return false;
-	const placement = settings.bannerPlacement || "all_screens";
-	if (placement === "home_only") return screen === "home";
-	if (placement === "home_and_matches") return screen === "home" || screen === "matches";
-	return true;
-}
-/**
-* Strict display guard: an ad is eligible to display ONLY when its own ad request succeeded ('loaded').
-* Never returns true just because the SDK initialized ('idle') or failed ('failed').
-*/
-function canDisplayLoadedAd(state) {
-	return state === "loaded";
-}
-/**
-* Returns initial format states right after SDK initialization without falsely marking ads as loaded/ready.
-*/
-function buildInitialAndroidFormatStates(config, isOnline) {
-	if (!isOnline) return {
-		bannerState: config.bannerAdsEnabled ? "offline" : "disabled",
-		interstitialState: config.interstitialAdsEnabled ? "offline" : "disabled",
-		rewardedState: config.rewardedAdsEnabled ? "offline" : "disabled"
-	};
-	return {
-		bannerState: config.bannerAdsEnabled ? "idle" : "disabled",
-		interstitialState: config.interstitialAdsEnabled ? "idle" : "disabled",
-		rewardedState: config.rewardedAdsEnabled ? "idle" : "disabled"
-	};
-}
-/**
-* Determines whether a withdrawal submission should proceed after attempting a rewarded ad.
-* Never blocks withdrawals in Web/PWA preview or when the rewarded ad fails/is offline/disabled.
-* Only pauses if the user started watching a loaded ad on Android and dismissed it early.
-*/
-function shouldProceedWithWithdrawalAfterRewardedAd(outcome) {
-	if (outcome === "dismissed") return {
-		proceed: false,
-		reason: "Ad closed early. Watch the full rewarded ad to submit your withdrawal request."
-	};
-	return { proceed: true };
-}
 // src/lib/seedData.ts
 var BRAND_ASSETS = {
 	logo: "/assets/spider_esports_logo_ff-6FC-sVnj.png",
@@ -49735,11 +49099,12 @@ var SEED_TOURNAMENTS = [
 		featured: true,
 		published: true,
 		rules: [
-			"Free entry community event — zero entry fees.",
+			"Free entry community event — 0 Spider Coins entry fee.",
 			"Mobile devices only; emulators and third-party scripts are strictly banned.",
 			"All 4 squad members must join the custom room 10 minutes before match time.",
 			"Win Bonus + 15 Spider Coins per verified elimination credited by admin."
 		],
+		entryFeeCoins: 0,
 		coinReward: 500,
 		perKillCoins: 15,
 		createdBy: "system",
@@ -49767,6 +49132,7 @@ var SEED_TOURNAMENTS = [
 			"No grenade spamming or roof glitching.",
 			"Room credentials visible exclusively to registered team captains."
 		],
+		entryFeeCoins: 0,
 		coinReward: 400,
 		perKillCoins: 10,
 		createdBy: "system",
@@ -49794,6 +49160,7 @@ var SEED_TOURNAMENTS = [
 			"Desert Eagle & Woodpecker rounds permitted.",
 			"Single elimination; report screenshots if opponent disconnects."
 		],
+		entryFeeCoins: 0,
 		coinReward: 250,
 		perKillCoins: 10,
 		createdBy: "system",
@@ -49821,6 +49188,7 @@ var SEED_TOURNAMENTS = [
 			"Teaming in Solo rooms leads to permanent account suspension.",
 			"Kills and Booyah verified by Spider Esports marshals."
 		],
+		entryFeeCoins: 0,
 		coinReward: 350,
 		perKillCoins: 20,
 		createdBy: "system",
@@ -49844,6 +49212,7 @@ var SEED_TOURNAMENTS = [
 		featured: false,
 		published: true,
 		rules: ["Register both Captain and Partner Free Fire UIDs.", "Both duo players must occupy the assigned slot number in room."],
+		entryFeeCoins: 0,
 		coinReward: 400,
 		perKillCoins: 15,
 		createdBy: "system",
@@ -49867,6 +49236,7 @@ var SEED_TOURNAMENTS = [
 		featured: false,
 		published: true,
 		rules: ["Limited ammo off, Gloo Wall skill permitted.", "Character skills disabled for pure gunplay."],
+		entryFeeCoins: 0,
 		coinReward: 200,
 		perKillCoins: 10,
 		createdBy: "system",
@@ -49890,6 +49260,7 @@ var SEED_TOURNAMENTS = [
 		featured: false,
 		published: true,
 		rules: ["2v2 tactical Clash Squad bracket.", "No double sniper setups allowed."],
+		entryFeeCoins: 0,
 		coinReward: 300,
 		perKillCoins: 10,
 		createdBy: "system",
@@ -49913,6 +49284,7 @@ var SEED_TOURNAMENTS = [
 		featured: false,
 		published: true,
 		rules: ["2v2 Lone Wolf round-robin finals."],
+		entryFeeCoins: 0,
 		coinReward: 300,
 		perKillCoins: 10,
 		createdBy: "system",
@@ -50034,7 +49406,7 @@ var SEED_LEADERBOARD = [
 var SEED_ANNOUNCEMENTS = [{
 	id: "ann-season-open",
 	title: "Season 04 Community Scrims Now Open",
-	message: "All Battle Royale, Clash Squad, and Lone Wolf rooms are 100% free to enter. Play matches, score kills, and win to earn Spider Coins (100 Coins = ₹10 payout).",
+	message: "Compete in Battle Royale, Clash Squad, and Lone Wolf rooms. 1 Coin = ₹1 — only winning prize coins can be redeemed (minimum withdrawal ₹50).",
 	priority: "high",
 	active: true,
 	createdAt: minusHours(12)
@@ -50048,18 +49420,12 @@ var SEED_ANNOUNCEMENTS = [{
 }];
 var DEFAULT_ADMIN_SETTINGS = {
 	id: "default",
-	adMobMode: "production",
-	adMobAppId: ADMOB_PRODUCTION_CREDENTIALS.appId,
-	adSenseClientId: "",
-	bannerAdUnitId: ADMOB_PRODUCTION_CREDENTIALS.banner,
-	interstitialAdUnitId: ADMOB_PRODUCTION_CREDENTIALS.interstitial,
-	rewardedAdUnitId: ADMOB_PRODUCTION_CREDENTIALS.rewarded,
-	bannerAdsEnabled: true,
-	interstitialAdsEnabled: true,
-	rewardedAdsEnabled: true,
-	interstitialCooldownSeconds: 90,
-	bannerPlacement: "all_screens",
-	featuredAnnouncement: "100% Free Free Fire Tournaments · Earn Spider Coins (100 Coins = ₹10)",
+	paymentQrDataUrl: "",
+	paymentUpiId: "",
+	paymentReceiverName: "SPIDER ESPORTS",
+	telegramSupportUrl: "",
+	telegramSupportLabel: "24/7 Telegram Support",
+	featuredAnnouncement: "SPIDER ESPORTS · 1 Coin = ₹1 · Winning Prizes Redeemable (Min ₹50)",
 	maintenanceMode: false,
 	updatedAt: minusHours(1)
 };
@@ -50078,7 +49444,7 @@ var COSMETIC_CATALOG = [
 		id: "theme-crimson-grid",
 		name: "Crimson Vector",
 		type: "theme",
-		description: "Unlocked after joining 1 free community tournament.",
+		description: "Unlocked after joining 1 community tournament.",
 		unlockMetric: "tournamentsJoined",
 		unlockThreshold: 1,
 		previewColor: "#e11d48",
@@ -50132,11 +49498,11 @@ var COSMETIC_CATALOG = [
 	},
 	{
 		id: "badge-arena-supporter",
-		name: "Arena Supporter",
+		name: "Arena Veteran",
 		type: "badge",
-		description: "Optional non-cash cosmetic emblem unlocked via Rewarded Ad (never awards Spider Coins or cash).",
-		unlockThreshold: 1,
-		rewardedAdUnlock: true,
+		description: "Unlocked after competing in 3 SPIDER ESPORTS tournaments.",
+		unlockMetric: "tournamentsJoined",
+		unlockThreshold: 3,
 		previewColor: "#fbbf24"
 	}
 ];
@@ -50144,7 +49510,7 @@ var ACHIEVEMENTS_CATALOG = [
 	{
 		id: "first-drop",
 		title: "First Drop",
-		description: "Join your first free SPIDER ESPORTS tournament.",
+		description: "Join your first SPIDER ESPORTS tournament.",
 		metric: "tournamentsJoined",
 		threshold: 1
 	},
@@ -50163,16 +49529,27 @@ var ACHIEVEMENTS_CATALOG = [
 		threshold: 1
 	},
 	{
-		id: "coin-milestone-1000",
-		title: "100 Coin Earner",
-		description: "Accumulate 100 Spider Coins (₹10 payout threshold) from match rewards.",
+		id: "coin-milestone-50",
+		title: "50 Coin Earner",
+		description: "Reach 50 winning prize Spider Coins (₹50 minimum withdrawal threshold).",
 		metric: "coins",
-		threshold: 100
+		threshold: 50
 	}
 ];
+function getRedeemableWinningCoins(profile) {
+	if (!profile) return 0;
+	const total = Math.max(0, Math.floor(profile.coins ?? 0));
+	if (typeof profile.winningCoins === "number" && Number.isFinite(profile.winningCoins)) return Math.max(0, Math.min(total, Math.floor(profile.winningCoins)));
+	return total;
+}
+function getNonRedeemableCoins(profile) {
+	if (!profile) return 0;
+	const total = Math.max(0, Math.floor(profile.coins ?? 0));
+	return Math.max(0, total - getRedeemableWinningCoins(profile));
+}
 function calculateRupeesFromCoins(coins) {
 	if (!Number.isFinite(coins) || coins <= 0) return 0;
-	return Math.round(coins * 10 / 100 * 100) / 100;
+	return Math.round(coins * 1 * 100) / 100;
 }
 function formatRupees(rupees) {
 	return Number.isInteger(rupees) ? `₹${rupees}` : `₹${rupees.toFixed(2)}`;
@@ -50181,7 +49558,9 @@ function calculateMatchCoinReward(params) {
 	return Math.max(0, Math.floor(params.winBonusCoins || 0)) + Math.max(0, Math.floor(params.kills || 0)) * Math.max(0, Math.floor(params.coinsPerKill || 0));
 }
 function validateAdminCoinAdjustment(params) {
-	const { currentCoins, deltaCoins } = params;
+	const { currentCoins, deltaCoins, coinType = "winning" } = params;
+	const safeTotal = Math.max(0, Math.floor(currentCoins));
+	const safeWinning = typeof params.currentWinningCoins === "number" && Number.isFinite(params.currentWinningCoins) ? Math.max(0, Math.min(safeTotal, Math.floor(params.currentWinningCoins))) : safeTotal;
 	if (!Number.isInteger(deltaCoins) || deltaCoins === 0) return {
 		valid: false,
 		error: "Enter a non-zero whole number of coins."
@@ -50190,30 +49569,35 @@ function validateAdminCoinAdjustment(params) {
 		valid: false,
 		error: "Single coin adjustment cannot exceed 1,000,000 coins."
 	};
-	const nextCoins = Math.floor(currentCoins) + deltaCoins;
+	const nextCoins = safeTotal + deltaCoins;
 	if (nextCoins < 0) return {
 		valid: false,
 		error: "Player coin balance cannot drop below 0."
 	};
+	let nextWinningCoins;
+	if (coinType === "winning") nextWinningCoins = deltaCoins > 0 ? Math.min(nextCoins, safeWinning + deltaCoins) : Math.max(0, Math.min(nextCoins, safeWinning + deltaCoins));
+	else nextWinningCoins = Math.min(nextCoins, safeWinning);
 	return {
 		valid: true,
 		nextCoins,
+		nextWinningCoins,
 		deltaCoins
 	};
 }
 function validateWithdrawalRequest(params) {
-	const { amountCoins, availableCoins, method, destination } = params;
-	if (!Number.isInteger(amountCoins) || amountCoins < 100) return {
+	const { amountCoins, availableCoins, availableWinningCoins, method, destination } = params;
+	const redeemableWinning = Math.min(Math.max(0, Math.floor(availableCoins)), Math.max(0, Math.floor(availableWinningCoins)));
+	if (!Number.isInteger(amountCoins) || amountCoins < 50) return {
 		valid: false,
-		error: `Minimum withdrawal is ${100 .toLocaleString()} coins (₹10).`
+		error: `Minimum withdrawal is ${50 .toLocaleString()} winning coins (₹50).`
 	};
 	if (amountCoins > 1e7) return {
 		valid: false,
 		error: `Maximum single withdrawal is ${MAX_WITHDRAWAL_COINS.toLocaleString()} coins.`
 	};
-	if (amountCoins > availableCoins) return {
+	if (amountCoins > redeemableWinning) return {
 		valid: false,
-		error: `Insufficient coins. Available balance: ${availableCoins.toLocaleString()} coins.`
+		error: `Only winning prize coins can be redeemed. Redeemable winning balance: ${redeemableWinning.toLocaleString()} coins (₹${calculateRupeesFromCoins(redeemableWinning)}).`
 	};
 	const trimmedDest = destination.trim();
 	if (method === "upi") {
@@ -50233,7 +49617,6 @@ function validateWithdrawalRequest(params) {
 	};
 }
 function isCosmeticUnlocked(item, profile) {
-	if (item.rewardedAdUnlock) return Boolean(profile.unlockedCosmetics?.includes(item.id));
 	if (item.unlockThreshold <= 0) return true;
 	if (profile.unlockedCosmetics?.includes(item.id)) return true;
 	if (!item.unlockMetric) return true;
@@ -50260,19 +49643,13 @@ function getPlayerLeaderboardRank(entries, userId, scope = "global") {
 	const index = sortLeaderboard(entries, scope).findIndex((entry) => entry.userId === userId);
 	return index === -1 ? null : index + 1;
 }
-var INTERSTITIAL_COOLDOWN_MS = 9e4;
-function canShowInterstitial(params) {
-	const { lastShownAtMs, nowMs = Date.now(), cooldownMs = INTERSTITIAL_COOLDOWN_MS, isLiveMatchOrJoining } = params;
-	if (isLiveMatchOrJoining) return false;
-	if (lastShownAtMs <= 0) return true;
-	return nowMs - lastShownAtMs >= cooldownMs;
-}
 var ALLOWED_IMAGE_MIME_TYPES = [
 	"image/jpeg",
 	"image/jpg",
 	"image/png",
 	"image/webp"
 ];
+var ALLOWED_IMAGE_INPUT_ACCEPT = "image/png,image/jpeg,image/webp";
 function validateUploadImageFile(file) {
 	const mime = (file.type || "").toLowerCase().trim();
 	if (!ALLOWED_IMAGE_MIME_TYPES.includes(mime)) return "Please upload a PNG, JPG, or WEBP image file.";
@@ -50372,6 +49749,148 @@ async function compressImageFileToDataUrl(file) {
 		decoded.cleanup();
 	}
 }
+async function compressQrImageFileToDataUrl(file) {
+	const validationError = validateUploadImageFile(file);
+	if (validationError) throw new Error(validationError);
+	const decoded = await decodeImageSource(file);
+	try {
+		const canvas = document.createElement("canvas");
+		const ctx = canvas.getContext("2d");
+		if (!ctx) throw new Error("Browser canvas unavailable for QR image processing.");
+		for (const side of [
+			640,
+			480,
+			360
+		]) {
+			const fitted = fitImageDimensions(decoded.width, decoded.height, side, side);
+			canvas.width = fitted.width;
+			canvas.height = fitted.height;
+			ctx.fillStyle = "#FFFFFF";
+			ctx.fillRect(0, 0, fitted.width, fitted.height);
+			decoded.draw(ctx, fitted.width, fitted.height);
+			const pngUrl = canvas.toDataURL("image/png");
+			if (pngUrl.length <= 16e4) return {
+				dataUrl: pngUrl,
+				width: fitted.width,
+				height: fitted.height,
+				approxKb: estimateDataUrlSizeKb(pngUrl)
+			};
+			for (const quality of [
+				.92,
+				.84,
+				.72
+			]) {
+				const jpegUrl = canvas.toDataURL("image/jpeg", quality);
+				if (jpegUrl.length <= 16e4) return {
+					dataUrl: jpegUrl,
+					width: fitted.width,
+					height: fitted.height,
+					approxKb: estimateDataUrlSizeKb(jpegUrl)
+				};
+			}
+		}
+		throw new Error("QR image is still too large after compression. Try a cropped QR image.");
+	} finally {
+		decoded.cleanup();
+	}
+}
+var MAX_ADD_COIN_RUPEES = 1e4;
+var ADD_COIN_PRESETS = [
+	50,
+	100,
+	250,
+	500,
+	1e3
+];
+var SEQUENTIAL_ASC = "01234567890123456789";
+var SEQUENTIAL_DESC = "98765432109876543210";
+function normalizeUtrInput(raw) {
+	return raw.replace(/\s+/g, "").trim();
+}
+function validateDepositAmount(rawAmount) {
+	if (!Number.isFinite(rawAmount) || !Number.isInteger(rawAmount)) return {
+		valid: false,
+		error: "Enter a whole rupee amount (1 Rupee = 1 Spider Coin)."
+	};
+	if (rawAmount < 10) return {
+		valid: false,
+		error: `Minimum Add Coin amount is ₹10 (10 Coins).`
+	};
+	if (rawAmount > 1e4) return {
+		valid: false,
+		error: `Maximum single Add Coin deposit is ₹${MAX_ADD_COIN_RUPEES.toLocaleString()} (${MAX_ADD_COIN_RUPEES.toLocaleString()} Coins).`
+	};
+	return {
+		valid: true,
+		rupees: rawAmount,
+		coins: rawAmount
+	};
+}
+function validateUtrNumber(rawUtr) {
+	const utr = normalizeUtrInput(rawUtr);
+	if (!/^[0-9]{12}$/.test(utr)) return {
+		valid: false,
+		error: "Enter the exact 12-digit UPI UTR / Reference Number from your payment app."
+	};
+	if (/^(\d)\1{11}$/.test(utr)) return {
+		valid: false,
+		error: "Invalid UTR number: repeating digits cannot be a valid UPI transaction reference."
+	};
+	if (SEQUENTIAL_ASC.includes(utr) || SEQUENTIAL_DESC.includes(utr)) return {
+		valid: false,
+		error: "Invalid UTR number: sequential test digits are not accepted."
+	};
+	if (new Set(utr.split("")).size < 3) return {
+		valid: false,
+		error: "UTR reference looks invalid. Please copy the exact 12-digit UTR from your UPI receipt."
+	};
+	return {
+		valid: true,
+		utr
+	};
+}
+function validateOptionalPayerUpi(rawUpi) {
+	const trimmed = (rawUpi || "").trim();
+	if (!trimmed) return { valid: true };
+	if (!/^[a-zA-Z0-9._-]{2,64}@[a-zA-Z]{2,32}$/.test(trimmed)) return {
+		valid: false,
+		error: "Payer UPI ID format looks invalid (e.g. yourname@okaxis), or leave it blank."
+	};
+	return {
+		valid: true,
+		payerUpi: trimmed
+	};
+}
+function verifyCoinDepositSubmission(params) {
+	if (!params.hasPaymentQrConfigured) return {
+		valid: false,
+		error: "Payment QR is not configured by the administrator yet. Please check back shortly."
+	};
+	const amountCheck = validateDepositAmount(params.amountRupees);
+	if (!amountCheck.valid) return amountCheck;
+	const utrCheck = validateUtrNumber(params.utr);
+	if (!utrCheck.valid) return utrCheck;
+	const upiCheck = validateOptionalPayerUpi(params.payerUpi);
+	if (!upiCheck.valid) return upiCheck;
+	let cleanScreenshot;
+	if (params.screenshotUrl && params.screenshotUrl.trim().length > 0) {
+		const trimmedShot = params.screenshotUrl.trim();
+		if (!isValidImageDataUrl(trimmedShot) || trimmedShot.length > 2e5) return {
+			valid: false,
+			error: "Payment screenshot must be a valid compressed PNG/JPG/WEBP image."
+		};
+		cleanScreenshot = trimmedShot;
+	}
+	return {
+		valid: true,
+		rupees: amountCheck.rupees,
+		coins: amountCheck.coins,
+		utr: utrCheck.utr,
+		...upiCheck.payerUpi ? { payerUpi: upiCheck.payerUpi } : {},
+		...cleanScreenshot ? { screenshotUrl: cleanScreenshot } : {},
+		verificationNote: `Auto-verified 12-digit UTR ${utrCheck.utr} · ₹${amountCheck.rupees} = +${amountCheck.coins} Spider Coins`
+	};
+}
 // src/utils/tournamentRules.ts
 var TOURNAMENT_MODES = {
 	Solo: {
@@ -50450,10 +49969,60 @@ var CATEGORIES_WITH_MODES = {
 		"CS 2v2",
 		"CS 4v4"
 	],
-	"Lone Wolf": ["Lone Wolf 1v1", "Lone Wolf 2v2"]
+	"Lone Wolf": ["Lone Wolf 1v1", "Lone Wolf 2v2"],
+	Custom: []
 };
+var RANDOM_CUSTOM_MODE_IDEAS = [
+	"Sniper Only 1v1",
+	"One-Tap Headshot Duel",
+	"Shotgun Rush 2v2",
+	"Unlimited Gloo Wall Custom",
+	"Random Weapon Chaos 4v4",
+	"Pistol & Melee Showdown",
+	"Fast Zone Rush Solo",
+	"Custom Duo Survival"
+];
+function pickRandomCustomModeName(excludeName) {
+	const pool = RANDOM_CUSTOM_MODE_IDEAS.filter((name) => name.toLowerCase() !== (excludeName || "").trim().toLowerCase());
+	const candidates = pool.length > 0 ? pool : RANDOM_CUSTOM_MODE_IDEAS;
+	return candidates[Math.floor(Math.random() * candidates.length)];
+}
 function getModeDefinition(mode) {
-	return TOURNAMENT_MODES[mode];
+	if (Object.prototype.hasOwnProperty.call(TOURNAMENT_MODES, mode)) return TOURNAMENT_MODES[mode];
+	const cleanMode = (mode || "Custom Mode").trim() || "Custom Mode";
+	return {
+		mode: cleanMode,
+		category: "Custom",
+		teamSize: 1,
+		requiredTeammates: 0,
+		defaultMaxSlots: 16,
+		shortLabel: cleanMode
+	};
+}
+function getModesForMatchesFilter(category, tournaments) {
+	const standardList = category === "All" ? [
+		"Solo",
+		"Duo",
+		"Squad",
+		"CS 1v1",
+		"CS 2v2",
+		"CS 4v4",
+		"Lone Wolf 1v1",
+		"Lone Wolf 2v2"
+	] : [...CATEGORIES_WITH_MODES[category]];
+	const seen = new Set(standardList.map((m) => m.toLowerCase()));
+	const dynamicModes = [];
+	for (const t of tournaments) {
+		if (category !== "All" && t.category !== category) continue;
+		const trimmed = (t.mode || "").trim();
+		if (!trimmed) continue;
+		const key = trimmed.toLowerCase();
+		if (!seen.has(key)) {
+			seen.add(key);
+			dynamicModes.push(trimmed);
+		}
+	}
+	return [...standardList, ...dynamicModes];
 }
 function isTournamentFull(tournament) {
 	return tournament.filledSlots >= tournament.maxSlots;
@@ -50472,8 +50041,86 @@ function validateFreeFireIgn(ign) {
 	if (trimmed.length < 2 || trimmed.length > 32) return "In-Game Name (IGN) must be between 2 and 32 characters.";
 	return null;
 }
+var MAX_ENTRY_FEE_COINS = 1e6;
+var MAX_PRIZE_POOL_COINS = 1e7;
+var MAX_PER_KILL_COINS = 1e5;
+function getTournamentEntryFee(tournament) {
+	if (!tournament || typeof tournament.entryFeeCoins !== "number" || !Number.isFinite(tournament.entryFeeCoins)) return 0;
+	return Math.max(0, Math.floor(tournament.entryFeeCoins));
+}
+function formatEntryFeeLabel(entryFeeCoins, compact = false) {
+	const fee = Math.max(0, Math.floor(entryFeeCoins || 0));
+	if (fee === 0) return "FREE";
+	return compact ? `${fee.toLocaleString()} Coins` : `${fee.toLocaleString()} Coins (₹${fee.toLocaleString()})`;
+}
+function validateCustomModeName(modeName) {
+	const trimmed = modeName.trim();
+	if (trimmed.length < 2 || trimmed.length > 48) return {
+		valid: false,
+		error: "Custom mode name must be between 2 and 48 characters."
+	};
+	return {
+		valid: true,
+		mode: trimmed
+	};
+}
+function validateEntryFeeCoins(entryFeeCoins) {
+	if (!Number.isInteger(entryFeeCoins) || entryFeeCoins < 0 || entryFeeCoins > 1e6) return {
+		valid: false,
+		error: `Entry fee must be a whole number from 0 (Free) up to ${MAX_ENTRY_FEE_COINS.toLocaleString()} coins.`
+	};
+	return {
+		valid: true,
+		entryFeeCoins
+	};
+}
+function validatePrizePoolCoins(coinReward, perKillCoins) {
+	if (!Number.isInteger(coinReward) || coinReward < 0 || coinReward > 1e7) return {
+		valid: false,
+		error: `Prize pool must be a whole number from 0 up to ${MAX_PRIZE_POOL_COINS.toLocaleString()} coins.`
+	};
+	if (!Number.isInteger(perKillCoins) || perKillCoins < 0 || perKillCoins > 1e5) return {
+		valid: false,
+		error: `Per-kill coins must be a whole number from 0 up to ${MAX_PER_KILL_COINS.toLocaleString()} coins.`
+	};
+	return {
+		valid: true,
+		coinReward,
+		perKillCoins
+	};
+}
+function calculateEntryFeeDeduction(params) {
+	const safeCoins = Math.max(0, Math.floor(params.currentCoins));
+	const safeWinning = Math.max(0, Math.min(safeCoins, Math.floor(params.currentWinningCoins)));
+	const fee = Math.max(0, Math.floor(params.entryFeeCoins));
+	if (safeCoins < fee) return {
+		valid: false,
+		error: `Insufficient Spider Coins. Entry fee is ${fee.toLocaleString()} coins (₹${fee.toLocaleString()}), and your wallet has ${safeCoins.toLocaleString()} coins. Add coins via QR in Profile.`
+	};
+	const nextCoins = safeCoins - fee;
+	const nextWinningCoins = Math.min(nextCoins, safeWinning);
+	return {
+		valid: true,
+		nextCoins,
+		nextWinningCoins,
+		entryFeePaid: fee,
+		winningCoinsSpent: safeWinning - nextWinningCoins
+	};
+}
+function calculateEntryFeeRefund(params) {
+	const safeCoins = Math.max(0, Math.floor(params.currentCoins));
+	const safeWinning = Math.max(0, Math.min(safeCoins, Math.floor(params.currentWinningCoins)));
+	const feePaid = Math.max(0, Math.floor(params.entryFeePaid));
+	const winPaid = Math.max(0, Math.min(feePaid, Math.floor(params.entryWinningCoinsPaid)));
+	const nextCoins = safeCoins + feePaid;
+	return {
+		nextCoins,
+		nextWinningCoins: Math.min(nextCoins, safeWinning + winPaid),
+		refundedCoins: feePaid
+	};
+}
 function canJoinTournament(params) {
-	const { tournament, alreadyRegistered, userSuspended, nowMs = Date.now() } = params;
+	const { tournament, alreadyRegistered, userSuspended, userCoins, nowMs = Date.now() } = params;
 	if (userSuspended) return {
 		allowed: false,
 		reason: "Your account is currently suspended from tournaments."
@@ -50506,6 +50153,11 @@ function canJoinTournament(params) {
 	if (!Number.isNaN(deadlineMs) && nowMs > deadlineMs) return {
 		allowed: false,
 		reason: "Registration deadline has passed."
+	};
+	const entryFee = getTournamentEntryFee(tournament);
+	if (typeof userCoins === "number" && entryFee > 0 && Math.floor(userCoins) < entryFee) return {
+		allowed: false,
+		reason: `Insufficient balance: entry fee is ${entryFee.toLocaleString()} coins (₹${entryFee.toLocaleString()}), and you have ${Math.max(0, Math.floor(userCoins)).toLocaleString()} coins.`
 	};
 	return { allowed: true };
 }
@@ -50653,6 +50305,7 @@ function normalizeTournament(id, data) {
 	return {
 		...data,
 		id,
+		entryFeeCoins: typeof data.entryFeeCoins === "number" && Number.isFinite(data.entryFeeCoins) ? Math.max(0, Math.floor(data.entryFeeCoins)) : 0,
 		coinReward: typeof data.coinReward === "number" ? data.coinReward : typeof data.xpReward === "number" ? data.xpReward : 0,
 		perKillCoins: typeof data.perKillCoins === "number" ? data.perKillCoins : 10,
 		registrationDeadline: toIsoString(data.registrationDeadline),
@@ -50662,10 +50315,13 @@ function normalizeTournament(id, data) {
 	};
 }
 function normalizeUserProfile(uid, data) {
+	const coins = typeof data.coins === "number" ? data.coins : 0;
+	const winningCoins = typeof data.winningCoins === "number" ? Math.max(0, Math.min(coins, data.winningCoins)) : coins;
 	return {
 		...data,
 		uid,
-		coins: typeof data.coins === "number" ? data.coins : 0,
+		coins,
+		winningCoins,
 		unlockedCosmetics: Array.isArray(data.unlockedCosmetics) ? data.unlockedCosmetics : ["theme-obsidian", "badge-web-striker"],
 		achievements: Array.isArray(data.achievements) ? data.achievements : [],
 		...data.lastDailyClaimAt ? { lastDailyClaimAt: toIsoString(data.lastDailyClaimAt) } : {},
@@ -50809,9 +50465,12 @@ function subscribeAnnouncements(callback) {
 	return onSnapshot(query(collection(db, "announcements"), where("active", "==", true)), (snapshot) => {
 		const items = snapshot.docs.map((d) => {
 			const data = d.data();
+			const rawMessage = typeof data.message === "string" ? data.message : "";
+			const normalizedMessage = d.id === "ann-season-open" && (/(1,000|1000|100)\s+Coins\s*=\s*₹?10/i.test(rawMessage) || rawMessage.includes("Add Coins via QR or earn match rewards at 1 Coin = ₹1")) ? SEED_ANNOUNCEMENTS[0].message : rawMessage;
 			return {
 				...data,
 				id: d.id,
+				message: normalizedMessage,
 				createdAt: toIsoString(data.createdAt)
 			};
 		});
@@ -50867,6 +50526,38 @@ function adminSubscribeWithdrawals(callback) {
 		}));
 	}, (error) => {
 		handleFirestoreError(error, OperationType.LIST, "withdrawals");
+	});
+}
+function subscribeUserCoinDeposits(userId, callback) {
+	return onSnapshot(query(collection(db, "coin_deposits"), where("userId", "==", userId)), (snapshot) => {
+		const items = snapshot.docs.map((d) => {
+			const data = d.data();
+			return {
+				...data,
+				id: d.id,
+				createdAt: toIsoString(data.createdAt),
+				updatedAt: toIsoString(data.updatedAt)
+			};
+		});
+		items.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+		callback(items);
+	}, (error) => {
+		handleFirestoreError(error, OperationType.LIST, `coin_deposits?userId=${userId}`);
+	});
+}
+function adminSubscribeCoinDeposits(callback) {
+	return onSnapshot(query(collection(db, "coin_deposits"), orderBy("createdAt", "desc")), (snapshot) => {
+		callback(snapshot.docs.map((d) => {
+			const data = d.data();
+			return {
+				...data,
+				id: d.id,
+				createdAt: toIsoString(data.createdAt),
+				updatedAt: toIsoString(data.updatedAt)
+			};
+		}));
+	}, (error) => {
+		handleFirestoreError(error, OperationType.LIST, "coin_deposits");
 	});
 }
 function subscribeAdminSettings(callback) {
@@ -50986,6 +50677,7 @@ async function createOrCompleteUserProfile(params) {
 			totalKills: 0,
 			totalPoints: 0,
 			coins: 0,
+			winningCoins: 0,
 			unlockedCosmetics: ["theme-obsidian", "badge-web-striker"],
 			achievements: [],
 			suspended: false,
@@ -51054,12 +50746,14 @@ async function joinTournamentInFirestore(params) {
 	const tRef = doc(db, "tournaments", tournament.id);
 	const regRef = doc(db, "registrations", regId);
 	const userRef = doc(db, "users", profile.uid);
+	const lbRef = doc(db, "leaderboards", profile.uid);
 	try {
 		return await runTransaction(db, async (tx) => {
-			const [tSnap, regSnap, userSnap] = await Promise.all([
+			const [tSnap, regSnap, userSnap, lbSnap] = await Promise.all([
 				tx.get(tRef),
 				tx.get(regRef),
-				tx.get(userRef)
+				tx.get(userRef),
+				tx.get(lbRef)
 			]);
 			if (!tSnap.exists()) throw new Error("This tournament is not active in the database yet. Ask the admin to sync or publish brackets.");
 			const tData = tSnap.data();
@@ -51068,15 +50762,23 @@ async function joinTournamentInFirestore(params) {
 			const liveMaxSlots = typeof tData.maxSlots === "number" ? tData.maxSlots : tournament.maxSlots;
 			if (currentFilled >= liveMaxSlots) throw new Error("All tournament slots are full.");
 			if (regSnap.exists() && regSnap.data().status === "confirmed") throw new Error("You have already joined this tournament.");
+			if (!userSnap.exists()) throw new Error("Player profile not found.");
 			const nextFilled = currentFilled + 1;
 			const assignedSlot = Math.min(liveMaxSlots, nextFilled);
-			const userData = userSnap.exists() ? userSnap.data() : {};
+			const userData = userSnap.data();
+			const liveCoins = typeof userData.coins === "number" ? userData.coins : profile.coins;
+			const feeDeduction = calculateEntryFeeDeduction({
+				currentCoins: liveCoins,
+				currentWinningCoins: typeof userData.winningCoins === "number" ? Math.max(0, Math.min(liveCoins, userData.winningCoins)) : liveCoins,
+				entryFeeCoins: typeof tData.entryFeeCoins === "number" && Number.isFinite(tData.entryFeeCoins) ? Math.max(0, Math.floor(tData.entryFeeCoins)) : 0
+			});
+			if (!feeDeduction.valid) throw new Error(feeDeduction.error);
 			const nextTournamentsJoined = (typeof userData.tournamentsJoined === "number" ? userData.tournamentsJoined : profile.tournamentsJoined) + 1;
 			const nextAchievements = evaluateUnlockedAchievements({
 				tournamentsJoined: nextTournamentsJoined,
 				totalKills: profile.totalKills,
 				totalWins: profile.totalWins,
-				coins: profile.coins,
+				coins: feeDeduction.nextCoins,
 				achievements: profile.achievements
 			});
 			const nextCosmetics = Array.from(/* @__PURE__ */ new Set([...profile.unlockedCosmetics || [], ...COSMETIC_CATALOG.filter((c) => isCosmeticUnlocked(c, {
@@ -51093,6 +50795,8 @@ async function joinTournamentInFirestore(params) {
 				freeFireIgn: freeFireIgn.trim(),
 				freeFireUid: freeFireUid.trim(),
 				slotNumber: assignedSlot,
+				entryFeePaid: feeDeduction.entryFeePaid,
+				entryWinningCoinsPaid: feeDeduction.winningCoinsSpent,
 				status: "confirmed",
 				updatedAt: serverTimestamp()
 			};
@@ -51107,16 +50811,24 @@ async function joinTournamentInFirestore(params) {
 			});
 			tx.update(userRef, {
 				tournamentsJoined: nextTournamentsJoined,
+				coins: feeDeduction.nextCoins,
+				winningCoins: feeDeduction.nextWinningCoins,
+				lastEntryTournamentId: tournament.id,
 				achievements: nextAchievements,
 				unlockedCosmetics: nextCosmetics,
 				updatedAt: serverTimestamp()
 			});
+			if (feeDeduction.entryFeePaid > 0 && lbSnap.exists()) tx.update(lbRef, {
+				coins: feeDeduction.nextCoins,
+				updatedAt: serverTimestamp()
+			});
 			const notifId = `reg_${tournament.id}_${Date.now()}`;
+			const feeText = feeDeduction.entryFeePaid > 0 ? ` Entry fee paid: ${feeDeduction.entryFeePaid.toLocaleString()} coins (₹${feeDeduction.entryFeePaid.toLocaleString()}).` : " Free entry.";
 			tx.set(doc(db, "notifications", notifId), {
 				id: notifId,
 				userId: profile.uid,
 				title: "Joined Tournament",
-				body: `Slot #${assignedSlot} confirmed for ${tournament.title} (${tournament.mode}).`,
+				body: `Slot #${assignedSlot} confirmed for ${tournament.title} (${tournament.mode}).${feeText}`,
 				type: "registration",
 				tournamentId: tournament.id,
 				read: false,
@@ -51124,7 +50836,8 @@ async function joinTournamentInFirestore(params) {
 			});
 			return {
 				slotNumber: assignedSlot,
-				nextFilledSlots: nextFilled
+				nextFilledSlots: nextFilled,
+				entryFeePaid: feeDeduction.entryFeePaid
 			};
 		});
 	} catch (error) {
@@ -51138,10 +50851,20 @@ async function cancelTournamentRegistration(params) {
 	const regId = `${tournament.id}_${profile.uid}`;
 	const tRef = doc(db, "tournaments", tournament.id);
 	const regRef = doc(db, "registrations", regId);
+	const userRef = doc(db, "users", profile.uid);
+	const lbRef = doc(db, "leaderboards", profile.uid);
 	try {
-		await runTransaction(db, async (tx) => {
-			const [tSnap, regSnap] = await Promise.all([tx.get(tRef), tx.get(regRef)]);
+		return await runTransaction(db, async (tx) => {
+			const [tSnap, regSnap, userSnap, lbSnap] = await Promise.all([
+				tx.get(tRef),
+				tx.get(regRef),
+				tx.get(userRef),
+				tx.get(lbRef)
+			]);
 			if (!regSnap.exists() || regSnap.data().status !== "confirmed") throw new Error("No active registration found to cancel.");
+			const regData = regSnap.data();
+			const entryFeePaid = typeof regData.entryFeePaid === "number" && Number.isFinite(regData.entryFeePaid) ? Math.max(0, Math.floor(regData.entryFeePaid)) : 0;
+			const entryWinningCoinsPaid = typeof regData.entryWinningCoinsPaid === "number" && Number.isFinite(regData.entryWinningCoinsPaid) ? Math.max(0, Math.floor(regData.entryWinningCoinsPaid)) : 0;
 			const currentFilled = tSnap.exists() && typeof tSnap.data().filledSlots === "number" ? tSnap.data().filledSlots : tournament.filledSlots;
 			tx.update(regRef, {
 				status: "cancelled",
@@ -51151,6 +50874,27 @@ async function cancelTournamentRegistration(params) {
 				filledSlots: Math.max(0, currentFilled - 1),
 				updatedAt: serverTimestamp()
 			});
+			if (entryFeePaid > 0 && userSnap.exists()) {
+				const userData = userSnap.data();
+				const liveCoins = typeof userData.coins === "number" ? userData.coins : profile.coins;
+				const refund = calculateEntryFeeRefund({
+					currentCoins: liveCoins,
+					currentWinningCoins: typeof userData.winningCoins === "number" ? Math.max(0, Math.min(liveCoins, userData.winningCoins)) : liveCoins,
+					entryFeePaid,
+					entryWinningCoinsPaid
+				});
+				tx.update(userRef, {
+					coins: refund.nextCoins,
+					winningCoins: refund.nextWinningCoins,
+					lastEntryTournamentId: tournament.id,
+					updatedAt: serverTimestamp()
+				});
+				if (lbSnap.exists()) tx.update(lbRef, {
+					coins: refund.nextCoins,
+					updatedAt: serverTimestamp()
+				});
+			}
+			return { refundedCoins: entryFeePaid };
 		});
 	} catch (error) {
 		if (error instanceof Error && !error.message.toLowerCase().includes("permission")) throw error;
@@ -51190,67 +50934,155 @@ async function equipCosmetic(params) {
 		handleFirestoreError(error, OperationType.UPDATE, `users/${profile.uid}`);
 	}
 }
-async function unlockRewardedAdCosmetic(params) {
-	if (!auth.currentUser || !auth.currentUser.emailVerified) throw new Error("Please verify your email address before unlocking profile cosmetics.");
-	const { profile, cosmeticId } = params;
-	const item = COSMETIC_CATALOG.find((c) => c.id === cosmeticId);
-	if (!item || !item.rewardedAdUnlock) throw new Error("Selected cosmetic is not eligible for rewarded ad unlock.");
-	if (profile.unlockedCosmetics?.includes(cosmeticId)) return { alreadyUnlocked: true };
-	const nextUnlocked = Array.from(/* @__PURE__ */ new Set([...profile.unlockedCosmetics || [], cosmeticId])).slice(0, 20);
+async function verifyAndAddCoinsFromQrPayment(params) {
+	if (!auth.currentUser || !auth.currentUser.emailVerified) throw new Error("Please verify your email address before adding Spider Coins.");
+	const { profile, amountRupees, utr, payerUpi, screenshotUrl, hasPaymentQrConfigured } = params;
+	if (profile.suspended) throw new Error("Suspended accounts cannot add coins.");
+	const check = verifyCoinDepositSubmission({
+		amountRupees,
+		utr,
+		payerUpi,
+		screenshotUrl,
+		hasPaymentQrConfigured
+	});
+	if (!check.valid) throw new Error(check.error);
+	const depositRef = doc(db, "coin_deposits", check.utr);
+	const userRef = doc(db, "users", profile.uid);
+	const lbRef = doc(db, "leaderboards", profile.uid);
+	const notifId = `dep_${check.utr}`;
 	try {
-		await updateDoc(doc(db, "users", profile.uid), {
-			unlockedCosmetics: nextUnlocked,
-			activeBadge: cosmeticId,
-			updatedAt: serverTimestamp()
+		return await runTransaction(db, async (tx) => {
+			const [depositSnap, userSnap, lbSnap] = await Promise.all([
+				tx.get(depositRef),
+				tx.get(userRef),
+				tx.get(lbRef)
+			]);
+			if (depositSnap.exists()) throw new Error(`UTR ${check.utr} has already been verified and credited. Each UPI payment reference can only be used once.`);
+			if (!userSnap.exists()) throw new Error("Player profile not found.");
+			const rawUser = userSnap.data();
+			const currentCoins = typeof rawUser.coins === "number" ? rawUser.coins : 0;
+			const currentWinningCoins = typeof rawUser.winningCoins === "number" ? Math.max(0, Math.min(currentCoins, rawUser.winningCoins)) : currentCoins;
+			const nextBalance = currentCoins + check.coins;
+			const nextAchievements = evaluateUnlockedAchievements({
+				tournamentsJoined: profile.tournamentsJoined,
+				totalKills: profile.totalKills,
+				totalWins: profile.totalWins,
+				coins: nextBalance,
+				achievements: profile.achievements || []
+			});
+			tx.set(depositRef, {
+				id: check.utr,
+				utr: check.utr,
+				userId: profile.uid,
+				username: profile.username,
+				freeFireUid: profile.freeFireUid,
+				rupees: check.rupees,
+				coins: check.coins,
+				...check.payerUpi ? { payerUpi: check.payerUpi } : {},
+				...check.screenshotUrl ? { screenshotUrl: check.screenshotUrl } : {},
+				status: "verified",
+				verificationNote: check.verificationNote,
+				createdAt: serverTimestamp(),
+				updatedAt: serverTimestamp()
+			});
+			tx.update(userRef, {
+				coins: nextBalance,
+				winningCoins: currentWinningCoins,
+				lastDepositUtr: check.utr,
+				achievements: nextAchievements,
+				updatedAt: serverTimestamp()
+			});
+			if (lbSnap.exists()) tx.update(lbRef, {
+				coins: nextBalance,
+				updatedAt: serverTimestamp()
+			});
+			tx.set(doc(db, "notifications", notifId), {
+				id: notifId,
+				userId: profile.uid,
+				title: `+${check.coins.toLocaleString()} Spider Coins Added`,
+				body: `Verified UPI payment ₹${check.rupees.toLocaleString()} (UTR: ${check.utr}). New wallet balance: ${nextBalance.toLocaleString()} coins (non-redeemable; only winning prizes can be withdrawn).`,
+				type: "deposit",
+				read: false,
+				createdAt: serverTimestamp()
+			});
+			return {
+				coinsAdded: check.coins,
+				nextBalance,
+				utr: check.utr
+			};
 		});
-		return { alreadyUnlocked: false };
 	} catch (error) {
-		handleFirestoreError(error, OperationType.UPDATE, `users/${profile.uid}`);
+		if (error instanceof Error && !error.message.toLowerCase().includes("permission")) throw error;
+		handleFirestoreError(error, OperationType.WRITE, `coin_deposits/${check.utr}`);
 	}
 }
 async function requestCoinWithdrawal(params) {
 	if (!auth.currentUser || !auth.currentUser.emailVerified) throw new Error("Please verify your email address before submitting a withdrawal request.");
 	const { profile, amountCoins, method, destination } = params;
 	if (profile.suspended) throw new Error("Suspended accounts cannot submit withdrawal requests.");
-	const check = validateWithdrawalRequest({
+	const preCheck = validateWithdrawalRequest({
 		amountCoins,
 		availableCoins: profile.coins,
+		availableWinningCoins: getRedeemableWinningCoins(profile),
 		method,
 		destination
 	});
-	if (!check.valid) throw new Error(check.error);
+	if (!preCheck.valid) throw new Error(preCheck.error);
 	const withdrawalId = `wd_${profile.uid}_${Date.now()}`;
 	const notifId = `wdn_${Date.now()}`;
+	const userRef = doc(db, "users", profile.uid);
+	const lbRef = doc(db, "leaderboards", profile.uid);
 	try {
-		const batch = writeBatch(db);
-		batch.update(doc(db, "users", profile.uid), {
-			coins: profile.coins - check.coins,
-			updatedAt: serverTimestamp()
+		await runTransaction(db, async (tx) => {
+			const [userSnap, lbSnap] = await Promise.all([tx.get(userRef), tx.get(lbRef)]);
+			if (!userSnap.exists()) throw new Error("Player profile not found.");
+			const freshProfile = normalizeUserProfile(profile.uid, userSnap.data());
+			if (freshProfile.suspended) throw new Error("Suspended accounts cannot submit withdrawal requests.");
+			const freshWinning = getRedeemableWinningCoins(freshProfile);
+			const check = validateWithdrawalRequest({
+				amountCoins,
+				availableCoins: freshProfile.coins,
+				availableWinningCoins: freshWinning,
+				method,
+				destination
+			});
+			if (!check.valid) throw new Error(check.error);
+			const nextCoins = freshProfile.coins - check.coins;
+			const nextWinningCoins = freshWinning - check.coins;
+			tx.update(userRef, {
+				coins: nextCoins,
+				winningCoins: nextWinningCoins,
+				updatedAt: serverTimestamp()
+			});
+			if (lbSnap.exists()) tx.update(lbRef, {
+				coins: nextCoins,
+				updatedAt: serverTimestamp()
+			});
+			tx.set(doc(db, "withdrawals", withdrawalId), {
+				id: withdrawalId,
+				userId: profile.uid,
+				username: profile.username,
+				freeFireUid: profile.freeFireUid,
+				coins: check.coins,
+				rupees: check.rupees,
+				method,
+				destination: check.destination,
+				status: "pending",
+				createdAt: serverTimestamp(),
+				updatedAt: serverTimestamp()
+			});
+			tx.set(doc(db, "notifications", notifId), {
+				id: notifId,
+				userId: profile.uid,
+				title: "Withdrawal Request Submitted",
+				body: `Requested ${formatRupees(check.rupees)} from winning prizes (${check.coins.toLocaleString()} winning coins) via ${method.toUpperCase()}.`,
+				type: "withdrawal",
+				read: false,
+				createdAt: serverTimestamp()
+			});
 		});
-		batch.set(doc(db, "withdrawals", withdrawalId), {
-			id: withdrawalId,
-			userId: profile.uid,
-			username: profile.username,
-			freeFireUid: profile.freeFireUid,
-			coins: check.coins,
-			rupees: check.rupees,
-			method,
-			destination: check.destination,
-			status: "pending",
-			createdAt: serverTimestamp(),
-			updatedAt: serverTimestamp()
-		});
-		batch.set(doc(db, "notifications", notifId), {
-			id: notifId,
-			userId: profile.uid,
-			title: "Withdrawal Request Submitted",
-			body: `Requested ${formatRupees(check.rupees)} for ${check.coins.toLocaleString()} coins via ${method.toUpperCase()}.`,
-			type: "withdrawal",
-			read: false,
-			createdAt: serverTimestamp()
-		});
-		await batch.commit();
 	} catch (error) {
+		if (error instanceof Error && !error.message.toLowerCase().includes("permission")) throw error;
 		handleFirestoreError(error, OperationType.WRITE, `withdrawals/${withdrawalId}`);
 	}
 }
@@ -51269,8 +51101,9 @@ async function adminMigrateLegacyDocs() {
 		const tourneySnap = await getDocs(collection(db, "tournaments"));
 		for (const d of tourneySnap.docs) {
 			const data = d.data();
-			if ("xpReward" in data || typeof data.coinReward !== "number" || typeof data.perKillCoins !== "number") {
+			if ("xpReward" in data || typeof data.coinReward !== "number" || typeof data.perKillCoins !== "number" || typeof data.entryFeeCoins !== "number") {
 				batch.update(d.ref, {
+					entryFeeCoins: typeof data.entryFeeCoins === "number" ? Math.max(0, Math.floor(data.entryFeeCoins)) : 0,
 					coinReward: typeof data.coinReward === "number" ? data.coinReward : Number(data.xpReward ?? 200),
 					perKillCoins: typeof data.perKillCoins === "number" ? data.perKillCoins : 10,
 					xpReward: deleteField(),
@@ -51303,6 +51136,15 @@ async function adminMigrateLegacyDocs() {
 					cosmeticPoints: deleteField(),
 					updatedAt: serverTimestamp()
 				});
+				ops++;
+			}
+		}
+		const seasonAnnRef = doc(db, "announcements", "ann-season-open");
+		const seasonAnnSnap = await getDoc(seasonAnnRef);
+		if (seasonAnnSnap.exists()) {
+			const msg = String(seasonAnnSnap.data().message ?? "");
+			if (/(1,000|1000|100)\s+Coins\s*=\s*₹?10/i.test(msg)) {
+				batch.update(seasonAnnRef, { message: SEED_ANNOUNCEMENTS[0].message });
 				ops++;
 			}
 		}
@@ -51354,6 +51196,12 @@ async function seedFirestoreIfEmpty(adminUid) {
 }
 async function adminSaveTournament(tournament, isNew) {
 	assertSoleAdmin();
+	const modeCheck = validateCustomModeName(tournament.mode);
+	if (!modeCheck.valid) throw new Error(modeCheck.error);
+	const feeCheck = validateEntryFeeCoins(Math.floor(Number(tournament.entryFeeCoins ?? 0)));
+	if (!feeCheck.valid) throw new Error(feeCheck.error);
+	const prizeCheck = validatePrizePoolCoins(Math.floor(Number(tournament.coinReward ?? 0)), Math.floor(Number(tournament.perKillCoins ?? 0)));
+	if (!prizeCheck.valid) throw new Error(prizeCheck.error);
 	const slotCheck = validateAdminSlotUpdate(tournament.maxSlots, isNew ? 0 : tournament.filledSlots);
 	if (!slotCheck.valid) throw new Error(slotCheck.error);
 	if (tournament.bannerUrl) {
@@ -51366,10 +51214,12 @@ async function adminSaveTournament(tournament, isNew) {
 		const batch = writeBatch(db);
 		const basePayload = {
 			...tournament,
+			mode: modeCheck.mode,
 			bannerUrl: tournament.bannerUrl?.trim() || void 0,
 			maxSlots: slotCheck.maxSlots,
-			coinReward: Math.max(0, Math.floor(tournament.coinReward)),
-			perKillCoins: Math.max(0, Math.floor(tournament.perKillCoins)),
+			entryFeeCoins: feeCheck.entryFeeCoins,
+			coinReward: prizeCheck.coinReward,
+			perKillCoins: prizeCheck.perKillCoins,
 			registrationDeadline: Timestamp.fromDate(new Date(tournament.registrationDeadline)),
 			credentialsReleaseAt: Timestamp.fromDate(new Date(tournament.credentialsReleaseAt)),
 			updatedAt: serverTimestamp()
@@ -51509,21 +51359,25 @@ async function adminPublishRoomCredentials(params) {
 }
 async function adminAdjustUserCoins(params) {
 	assertSoleAdmin();
-	const { userId, deltaCoins, reason } = params;
+	const { userId, deltaCoins, reason, coinType = "winning" } = params;
 	try {
 		const userRef = doc(db, "users", userId);
 		const lbRef = doc(db, "leaderboards", userId);
 		const [userSnap, lbSnap] = await Promise.all([getDoc(userRef), getDoc(lbRef)]);
 		if (!userSnap.exists()) throw new Error("Player profile not found.");
-		const rawUser = userSnap.data();
+		const normalizedUser = normalizeUserProfile(userId, userSnap.data());
+		const currentCoins = normalizedUser.coins;
 		const check = validateAdminCoinAdjustment({
-			currentCoins: typeof rawUser.coins === "number" ? rawUser.coins : 0,
-			deltaCoins
+			currentCoins,
+			currentWinningCoins: getRedeemableWinningCoins(normalizedUser),
+			deltaCoins,
+			coinType
 		});
 		if (!check.valid) throw new Error(check.error);
 		const batch = writeBatch(db);
 		batch.update(userRef, {
 			coins: check.nextCoins,
+			winningCoins: check.nextWinningCoins,
 			xp: deleteField(),
 			level: deleteField(),
 			cosmeticPoints: deleteField(),
@@ -51536,7 +51390,7 @@ async function adminAdjustUserCoins(params) {
 			updatedAt: serverTimestamp()
 		});
 		const notifId = `coins_${userId}_${Date.now()}`;
-		const verb = deltaCoins > 0 ? `+${deltaCoins.toLocaleString()} Spider Coins credited` : `${deltaCoins.toLocaleString()} Spider Coins adjusted`;
+		const verb = deltaCoins > 0 ? coinType === "winning" ? `+${deltaCoins.toLocaleString()} Winning Prize Coins credited` : `+${deltaCoins.toLocaleString()} Wallet Bonus Coins credited` : `${deltaCoins.toLocaleString()} Spider Coins adjusted`;
 		batch.set(doc(db, "notifications", notifId), {
 			id: notifId,
 			userId,
@@ -51547,7 +51401,10 @@ async function adminAdjustUserCoins(params) {
 			createdAt: serverTimestamp()
 		});
 		await batch.commit();
-		return check.nextCoins;
+		return {
+			nextCoins: check.nextCoins,
+			nextWinningCoins: check.nextWinningCoins
+		};
 	} catch (error) {
 		handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
 	}
@@ -51615,7 +51472,9 @@ async function adminPublishMatchResult(params) {
 				const [userSnap, lbSnap] = await Promise.all([getDoc(doc(db, "users", uid)), getDoc(doc(db, "leaderboards", uid))]);
 				if (userSnap.exists()) {
 					const u = normalizeUserProfile(uid, userSnap.data());
+					const currentWinning = getRedeemableWinningCoins(u);
 					const newCoins = u.coins + awardedCoins;
+					const newWinningCoins = currentWinning + awardedCoins;
 					const newWins = u.totalWins + (isChampion ? 1 : 0);
 					const newKills = u.totalKills + rowKills;
 					const newAchievements = evaluateUnlockedAchievements({
@@ -51637,6 +51496,7 @@ async function adminPublishMatchResult(params) {
 						totalKills: newKills,
 						totalPoints: u.totalPoints,
 						coins: newCoins,
+						winningCoins: newWinningCoins,
 						unlockedCosmetics: newCosmetics,
 						achievements: newAchievements,
 						xp: deleteField(),
@@ -51680,6 +51540,7 @@ async function adminPublishMatchResult(params) {
 				batch.update(doc(db, "users", reg.userId), {
 					matchesPlayed: pProfile.matchesPlayed + 1,
 					coins: nextPlayerCoins,
+					winningCoins: getRedeemableWinningCoins(pProfile),
 					achievements: nextAchievements,
 					xp: deleteField(),
 					level: deleteField(),
@@ -51737,9 +51598,13 @@ async function adminProcessWithdrawal(params) {
 		if (status === "rejected") {
 			const userSnap = await getDoc(doc(db, "users", withdrawal.userId));
 			if (userSnap.exists()) {
-				const refundedCoins = normalizeUserProfile(withdrawal.userId, userSnap.data()).coins + withdrawal.coins;
+				const u = normalizeUserProfile(withdrawal.userId, userSnap.data());
+				const currentWinning = getRedeemableWinningCoins(u);
+				const refundedCoins = u.coins + withdrawal.coins;
+				const refundedWinningCoins = Math.min(refundedCoins, currentWinning + withdrawal.coins);
 				batch.update(doc(db, "users", withdrawal.userId), {
 					coins: refundedCoins,
+					winningCoins: refundedWinningCoins,
 					xp: deleteField(),
 					level: deleteField(),
 					cosmeticPoints: deleteField(),
@@ -51766,6 +51631,49 @@ async function adminProcessWithdrawal(params) {
 		await batch.commit();
 	} catch (error) {
 		handleFirestoreError(error, OperationType.UPDATE, `withdrawals/${withdrawal.id}`);
+	}
+}
+async function adminRejectCoinDeposit(params) {
+	assertSoleAdmin();
+	const { deposit, adminNote } = params;
+	if (deposit.status === "rejected") throw new Error("This coin deposit has already been rejected and reversed.");
+	const cleanNote = adminNote.trim() || "Payment UTR could not be verified on bank statement.";
+	try {
+		const batch = writeBatch(db);
+		batch.update(doc(db, "coin_deposits", deposit.id), {
+			status: "rejected",
+			adminNote: cleanNote,
+			updatedAt: serverTimestamp()
+		});
+		const userSnap = await getDoc(doc(db, "users", deposit.userId));
+		if (userSnap.exists()) {
+			const u = normalizeUserProfile(deposit.userId, userSnap.data());
+			const currentWinning = getRedeemableWinningCoins(u);
+			const nextCoins = Math.max(0, u.coins - deposit.coins);
+			const nextWinningCoins = Math.min(nextCoins, currentWinning);
+			batch.update(doc(db, "users", deposit.userId), {
+				coins: nextCoins,
+				winningCoins: nextWinningCoins,
+				updatedAt: serverTimestamp()
+			});
+			if ((await getDoc(doc(db, "leaderboards", deposit.userId))).exists()) batch.update(doc(db, "leaderboards", deposit.userId), {
+				coins: nextCoins,
+				updatedAt: serverTimestamp()
+			});
+		}
+		const notifId = `dep_rej_${deposit.id}_${Date.now()}`;
+		batch.set(doc(db, "notifications", notifId), {
+			id: notifId,
+			userId: deposit.userId,
+			title: "Add Coin Deposit Reversed",
+			body: `Deposit of ${formatRupees(deposit.rupees)} (UTR: ${deposit.utr}) was rejected by admin (${cleanNote}). ${deposit.coins.toLocaleString()} coins deducted.`,
+			type: "deposit",
+			read: false,
+			createdAt: serverTimestamp()
+		});
+		await batch.commit();
+	} catch (error) {
+		handleFirestoreError(error, OperationType.UPDATE, `coin_deposits/${deposit.id}`);
 	}
 }
 async function adminFetchAllUsers() {
@@ -51846,95 +51754,143 @@ async function adminUpdateSettings(settings) {
 async function adminRemoveRegistration(registration, tournament) {
 	assertSoleAdmin();
 	try {
+		const feePaid = typeof registration.entryFeePaid === "number" && Number.isFinite(registration.entryFeePaid) ? Math.max(0, Math.floor(registration.entryFeePaid)) : 0;
+		const winPaid = typeof registration.entryWinningCoinsPaid === "number" && Number.isFinite(registration.entryWinningCoinsPaid) ? Math.max(0, Math.floor(registration.entryWinningCoinsPaid)) : 0;
 		const batch = writeBatch(db);
 		batch.delete(doc(db, "registrations", registration.id));
 		batch.update(doc(db, "tournaments", tournament.id), {
 			filledSlots: Math.max(0, tournament.filledSlots - 1),
 			updatedAt: serverTimestamp()
 		});
+		if (feePaid > 0 && registration.status === "confirmed" && tournament.status === "upcoming") {
+			const userRef = doc(db, "users", registration.userId);
+			const lbRef = doc(db, "leaderboards", registration.userId);
+			const [userSnap, lbSnap] = await Promise.all([getDoc(userRef), getDoc(lbRef)]);
+			if (userSnap.exists()) {
+				const u = normalizeUserProfile(registration.userId, userSnap.data());
+				const refund = calculateEntryFeeRefund({
+					currentCoins: u.coins,
+					currentWinningCoins: getRedeemableWinningCoins(u),
+					entryFeePaid: feePaid,
+					entryWinningCoinsPaid: winPaid
+				});
+				batch.update(userRef, {
+					coins: refund.nextCoins,
+					winningCoins: refund.nextWinningCoins,
+					updatedAt: serverTimestamp()
+				});
+				if (lbSnap.exists()) batch.update(lbRef, {
+					coins: refund.nextCoins,
+					updatedAt: serverTimestamp()
+				});
+				const notifId = `reg_rem_${registration.tournamentId}_${Date.now()}`;
+				batch.set(doc(db, "notifications", notifId), {
+					id: notifId,
+					userId: registration.userId,
+					title: "Registration Removed & Entry Fee Refunded",
+					body: `Your slot in ${tournament.title} was removed by admin and ${feePaid.toLocaleString()} coins (₹${feePaid.toLocaleString()}) were refunded to your wallet.`,
+					type: "cancellation",
+					tournamentId: tournament.id,
+					read: false,
+					createdAt: serverTimestamp()
+				});
+			}
+		}
 		await batch.commit();
 	} catch (error) {
 		handleFirestoreError(error, OperationType.DELETE, `registrations/${registration.id}`);
 	}
 }
-// src/utils/adConsent.ts
-var SPIDER_AD_CONSENT_STORAGE_KEY = "spider_ad_consent";
-var SPIDER_AD_CONSENT_EVENT = "spider-ad-consent-changed";
-function getSafeStorage(storage) {
-	if (storage !== void 0) return storage;
-	if (typeof window === "undefined") return null;
-	try {
-		return window.localStorage;
-	} catch {
-		return null;
-	}
-}
 /**
-* Reads the global `spider_ad_consent` preference.
-* GDPR-safe default: if unset (`null`), defaults to non-personalized ads (`personalizedAdsEnabled: false`).
+* Normalizes and strictly validates an admin-entered Telegram support handle or link.
+* Accepts:
+* - empty string (disconnects Telegram support)
+* - "@username" or "username" (5-32 chars, letters/digits/underscores)
+* - "t.me/username", "https://t.me/username", "https://t.me/+invite", "https://telegram.me/..."
+* Rejects any non-Telegram domain or unsafe protocol (e.g. javascript:, data:, external sites).
 */
-function readGlobalAdConsent(storage) {
-	const target = getSafeStorage(storage);
-	if (!target) return {
-		personalizedAdsEnabled: false,
-		hasExplicitChoice: false,
-		rawValue: null
+function normalizeAndValidateTelegramSupport(rawInput) {
+	const trimmed = rawInput.trim();
+	if (!trimmed) return {
+		valid: true,
+		url: "",
+		displayHandle: ""
 	};
+	if (/\s/.test(trimmed)) return {
+		valid: false,
+		error: "Telegram username or link cannot contain spaces."
+	};
+	let candidate = trimmed;
+	if (candidate.startsWith("@")) {
+		const handle = candidate.slice(1);
+		if (!/^[a-zA-Z0-9_]{5,32}$/.test(handle)) return {
+			valid: false,
+			error: "Telegram @username must be 5–32 letters, numbers, or underscores."
+		};
+		candidate = `https://t.me/${handle}`;
+	} else if (/^[a-zA-Z0-9_]{5,32}$/.test(candidate)) candidate = `https://t.me/${candidate}`;
+	else if (/^(t|telegram)\.me\//i.test(candidate)) candidate = `https://${candidate}`;
+	else if (/^http:\/\/(t|telegram)\.me\//i.test(candidate)) candidate = `https://${candidate.slice(7)}`;
+	let parsed;
 	try {
-		const raw = target.getItem(SPIDER_AD_CONSENT_STORAGE_KEY);
-		if (raw === "1") return {
-			personalizedAdsEnabled: true,
-			hasExplicitChoice: true,
-			rawValue: "1"
-		};
-		if (raw === "0") return {
-			personalizedAdsEnabled: false,
-			hasExplicitChoice: true,
-			rawValue: "0"
-		};
-		return {
-			personalizedAdsEnabled: false,
-			hasExplicitChoice: false,
-			rawValue: null
-		};
+		parsed = new URL(candidate);
 	} catch {
 		return {
-			personalizedAdsEnabled: false,
-			hasExplicitChoice: false,
-			rawValue: null
+			valid: false,
+			error: "Enter a valid Telegram @username or t.me link (e.g. @spider_support or https://t.me/spider_support)."
 		};
 	}
+	if (parsed.protocol !== "https:") return {
+		valid: false,
+		error: "Only secure https:// Telegram links are allowed."
+	};
+	const hostname = parsed.hostname.toLowerCase();
+	if (hostname !== "t.me" && hostname !== "telegram.me") return {
+		valid: false,
+		error: "Link must point to Telegram (t.me or telegram.me) or be a Telegram @username."
+	};
+	const cleanPath = parsed.pathname.replace(/\/+$/, "");
+	if (!cleanPath || cleanPath === "/" || !/^\/[a-zA-Z0-9_+\-/]{2,120}$/.test(cleanPath)) return {
+		valid: false,
+		error: "Enter your Telegram username or group invite path after t.me/ (e.g. https://t.me/your_support)."
+	};
+	const normalizedUrl = `https://${hostname}${cleanPath}`;
+	if (normalizedUrl.length > 160) return {
+		valid: false,
+		error: `Telegram link must be 160 characters or less.`
+	};
+	const segment = cleanPath.slice(1);
+	return {
+		valid: true,
+		url: normalizedUrl,
+		displayHandle: segment.startsWith("+") || segment.startsWith("joinchat/") ? "Telegram Support Group" : `@${segment.split("/")[0]}`
+	};
 }
-/**
-* Persists the global `spider_ad_consent` preference (`'1'` or `'0'`) and notifies global listeners.
-*/
-function writeGlobalAdConsent(personalizedAdsEnabled, storage) {
-	const serialized = personalizedAdsEnabled ? "1" : "0";
-	const target = getSafeStorage(storage);
-	if (target) try {
-		target.setItem(SPIDER_AD_CONSENT_STORAGE_KEY, serialized);
-	} catch {}
-	if (typeof window !== "undefined" && typeof CustomEvent !== "undefined") try {
-		window.dispatchEvent(new CustomEvent(SPIDER_AD_CONSENT_EVENT, { detail: { personalizedAdsEnabled } }));
-	} catch {}
-	return serialized;
-}
-function getAdConsentSummary(personalizedAdsEnabled) {
-	if (personalizedAdsEnabled) return {
-		personalizedAdsEnabled: true,
-		optedOut: false,
-		npa: false,
-		shortLabel: "Personalized",
-		modeHeadline: "Personalized Ads Enabled",
-		modeDescription: "Google AdMob may use device advertising IDs and interest signals to serve relevant ads that help keep all tournaments 100% free."
+function validateTelegramSupportLabel(rawLabel) {
+	const trimmed = rawLabel.trim();
+	if (trimmed.length > 80) return {
+		valid: false,
+		error: `Support label must be 80 characters or less.`
 	};
 	return {
-		personalizedAdsEnabled: false,
-		optedOut: true,
-		npa: true,
-		shortLabel: "Non-Personalized",
-		modeHeadline: "Opted Out · Non-Personalized Ads Only",
-		modeDescription: "Ad personalization is turned off (NPA=1). Ads use only contextual tournament information without behavioral profiling or cross-app tracking."
+		valid: true,
+		label: trimmed
+	};
+}
+function getTelegramSupportInfo(adminSettings) {
+	const validated = normalizeAndValidateTelegramSupport(adminSettings?.telegramSupportUrl?.trim() || "");
+	const customLabel = adminSettings?.telegramSupportLabel?.trim() || "";
+	if (!validated.valid || !validated.url) return {
+		configured: false,
+		url: "",
+		displayHandle: "",
+		label: customLabel || "Customer Support 24/7"
+	};
+	return {
+		configured: true,
+		url: validated.url,
+		displayHandle: validated.displayHandle,
+		label: customLabel || "24/7 Telegram Support"
 	};
 }
 // node_modules/react/cjs/react-jsx-runtime.production.js
@@ -52197,6 +52153,28 @@ var Check = createLucideIcon("check", [["path", {
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
+var CircleArrowDown = createLucideIcon("circle-arrow-down", [
+	["circle", {
+		cx: "12",
+		cy: "12",
+		r: "10",
+		key: "1mglay"
+	}],
+	["path", {
+		d: "M12 8v8",
+		key: "napkw2"
+	}],
+	["path", {
+		d: "m8 12 4 4 4-4",
+		key: "k98ssh"
+	}]
+]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
 var CircleCheck = createLucideIcon("circle-check", [["circle", {
 	cx: "12",
 	cy: "12",
@@ -52321,6 +52299,26 @@ var Database = createLucideIcon("database", [
 	["path", {
 		d: "M3 12A9 3 0 0 0 21 12",
 		key: "mv7ke4"
+	}]
+]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var ExternalLink = createLucideIcon("external-link", [
+	["path", {
+		d: "M15 3h6v6",
+		key: "1q9fwt"
+	}],
+	["path", {
+		d: "M10 14 21 3",
+		key: "gplh6r"
+	}],
+	["path", {
+		d: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6",
+		key: "a6xqqp"
 	}]
 ]);
 /**
@@ -52465,28 +52463,6 @@ var IndianRupee = createLucideIcon("indian-rupee", [
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var Info = createLucideIcon("info", [
-	["circle", {
-		cx: "12",
-		cy: "12",
-		r: "10",
-		key: "1mglay"
-	}],
-	["path", {
-		d: "M12 16v-4",
-		key: "1dtifu"
-	}],
-	["path", {
-		d: "M12 8h.01",
-		key: "e9boi3"
-	}]
-]);
-/**
-* @license lucide-react v0.546.0 - ISC
-*
-* This source code is licensed under the ISC license.
-* See the LICENSE file in the root directory of this source tree.
-*/
 var KeyRound = createLucideIcon("key-round", [["path", {
 	d: "M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z",
 	key: "1s6t7t"
@@ -52595,6 +52571,16 @@ var Megaphone = createLucideIcon("megaphone", [
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
+var MessageCircle = createLucideIcon("message-circle", [["path", {
+	d: "M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719",
+	key: "1sd12s"
+}]]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
 var Palette = createLucideIcon("palette", [
 	["path", {
 		d: "M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z",
@@ -52648,16 +52634,6 @@ var PenLine = createLucideIcon("pen-line", [["path", {
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var Play = createLucideIcon("play", [["path", {
-	d: "M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z",
-	key: "10ikf1"
-}]]);
-/**
-* @license lucide-react v0.546.0 - ISC
-*
-* This source code is licensed under the ISC license.
-* See the LICENSE file in the root directory of this source tree.
-*/
 var Plus = createLucideIcon("plus", [["path", {
 	d: "M5 12h14",
 	key: "1ays0h"
@@ -52665,6 +52641,74 @@ var Plus = createLucideIcon("plus", [["path", {
 	d: "M12 5v14",
 	key: "s699le"
 }]]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var QrCode = createLucideIcon("qr-code", [
+	["rect", {
+		width: "5",
+		height: "5",
+		x: "3",
+		y: "3",
+		rx: "1",
+		key: "1tu5fj"
+	}],
+	["rect", {
+		width: "5",
+		height: "5",
+		x: "16",
+		y: "3",
+		rx: "1",
+		key: "1v8r4q"
+	}],
+	["rect", {
+		width: "5",
+		height: "5",
+		x: "3",
+		y: "16",
+		rx: "1",
+		key: "1x03jg"
+	}],
+	["path", {
+		d: "M21 16h-3a2 2 0 0 0-2 2v3",
+		key: "177gqh"
+	}],
+	["path", {
+		d: "M21 21v.01",
+		key: "ents32"
+	}],
+	["path", {
+		d: "M12 7v3a2 2 0 0 1-2 2H7",
+		key: "8crl2c"
+	}],
+	["path", {
+		d: "M3 12h.01",
+		key: "nlz23k"
+	}],
+	["path", {
+		d: "M12 3h.01",
+		key: "n36tog"
+	}],
+	["path", {
+		d: "M12 16v.01",
+		key: "133mhm"
+	}],
+	["path", {
+		d: "M16 12h1",
+		key: "1slzba"
+	}],
+	["path", {
+		d: "M21 12v.01",
+		key: "1lwtk9"
+	}],
+	["path", {
+		d: "M12 21v-1",
+		key: "1880an"
+	}]
+]);
 /**
 * @license lucide-react v0.546.0 - ISC
 *
@@ -52781,62 +52825,28 @@ var Shield = createLucideIcon("shield", [["path", {
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var SlidersHorizontal = createLucideIcon("sliders-horizontal", [
+var Shuffle = createLucideIcon("shuffle", [
 	["path", {
-		d: "M10 5H3",
-		key: "1qgfaw"
+		d: "m18 14 4 4-4 4",
+		key: "10pe0f"
 	}],
 	["path", {
-		d: "M12 19H3",
-		key: "yhmn1j"
+		d: "m18 2 4 4-4 4",
+		key: "pucp1d"
 	}],
 	["path", {
-		d: "M14 3v4",
-		key: "1sua03"
+		d: "M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22",
+		key: "1ailkh"
 	}],
 	["path", {
-		d: "M16 17v4",
-		key: "1q0r14"
+		d: "M2 6h1.972a4 4 0 0 1 3.6 2.2",
+		key: "km57vx"
 	}],
 	["path", {
-		d: "M21 12h-9",
-		key: "1o4lsq"
-	}],
-	["path", {
-		d: "M21 19h-5",
-		key: "1rlt1p"
-	}],
-	["path", {
-		d: "M21 5h-7",
-		key: "1oszz2"
-	}],
-	["path", {
-		d: "M8 10v4",
-		key: "tgpxqk"
-	}],
-	["path", {
-		d: "M8 12H3",
-		key: "a7s4jb"
+		d: "M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45",
+		key: "os18l9"
 	}]
 ]);
-/**
-* @license lucide-react v0.546.0 - ISC
-*
-* This source code is licensed under the ISC license.
-* See the LICENSE file in the root directory of this source tree.
-*/
-var Smartphone = createLucideIcon("smartphone", [["rect", {
-	width: "14",
-	height: "20",
-	x: "5",
-	y: "2",
-	rx: "2",
-	ry: "2",
-	key: "1yt0o3"
-}], ["path", {
-	d: "M12 18h.01",
-	key: "mhygvu"
-}]]);
 /**
 * @license lucide-react v0.546.0 - ISC
 *
@@ -53218,6 +53228,8 @@ function TournamentCard({ tournament, isRegistered, onSelect }) {
 	}, [tournament.bannerUrl]);
 	const full = isTournamentFull(tournament);
 	const available = getAvailableSlots(tournament);
+	const entryFee = getTournamentEntryFee(tournament);
+	const entryLabel = formatEntryFeeLabel(entryFee, true);
 	const fillPercent = Math.min(100, Math.round(tournament.filledSlots / tournament.maxSlots * 100));
 	const fallbackImg = tournament.category === "Clash Squad" ? BRAND_ASSETS.clashSquadBanner : tournament.category === "Lone Wolf" ? BRAND_ASSETS.loneWolfBanner : BRAND_ASSETS.battleRoyaleBanner;
 	const statusLabel = tournament.status === "live" ? "Live Now" : tournament.status === "completed" ? "Completed" : tournament.status === "cancelled" ? "Cancelled" : full ? "Slots Full" : "Open Entry";
@@ -53238,14 +53250,15 @@ function TournamentCard({ tournament, isRegistered, onSelect }) {
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "absolute inset-0 bg-gradient-to-t from-[#121216] via-[#121216]/35 to-transparent" }),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "absolute bottom-3 left-4 right-4 flex items-center justify-between text-xs",
+					className: "absolute bottom-3 left-4 right-4 flex items-center justify-between gap-2 text-xs",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-						className: `font-semibold inline-flex items-center gap-1 ${isRegistered ? "text-emerald-400" : tournament.status === "live" ? "text-[#F43F5E]" : tournament.status === "completed" ? "text-zinc-300" : "text-emerald-400"}`,
+						className: `font-semibold inline-flex items-center gap-1 shrink-0 ${isRegistered ? "text-emerald-400" : tournament.status === "live" ? "text-[#F43F5E]" : tournament.status === "completed" ? "text-zinc-300" : "text-emerald-400"}`,
 						children: [isRegistered && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleCheck, { className: "w-3.5 h-3.5" }), isRegistered ? "Joined" : statusLabel]
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-						className: "text-amber-300 font-semibold tabular-nums",
+						className: "text-amber-300 font-semibold tabular-nums truncate",
 						children: [
-							"FREE · +",
+							entryFee > 0 ? `Entry ${entryLabel}` : "FREE",
+							" · +",
 							tournament.coinReward.toLocaleString(),
 							" Coins"
 						]
@@ -53327,1130 +53340,12 @@ function TournamentCard({ tournament, isRegistered, onSelect }) {
 		})]
 	});
 }
-// node_modules/@capacitor-community/admob/dist/esm/native-ads/native-ad-template.enum.js
-/**
-* Layouts rendered by the native Google Mobile Ads SDK.
-*
-* The dimensions of a native ad slot must remain stable while it is used by a
-* virtual scroller. `small` is intended for compact rows, while `medium`
-* includes a larger media area.
-*/
-var NativeAdTemplate;
-(function(NativeAdTemplate) {
-	NativeAdTemplate["Small"] = "small";
-	NativeAdTemplate["Medium"] = "medium";
-})(NativeAdTemplate || (NativeAdTemplate = {}));
-// node_modules/@capacitor-community/admob/dist/esm/definitions.js
-var MaxAdContentRating;
-(function(MaxAdContentRating) {
-	/**
-	* Content suitable for general audiences, including families.
-	*/
-	MaxAdContentRating["General"] = "General";
-	/**
-	* Content suitable for most audiences with parental guidance.
-	*/
-	MaxAdContentRating["ParentalGuidance"] = "ParentalGuidance";
-	/**
-	* Content suitable for teen and older audiences.
-	*/
-	MaxAdContentRating["Teen"] = "Teen";
-	/**
-	* Content suitable only for mature audiences.
-	*/
-	MaxAdContentRating["MatureAudience"] = "MatureAudience";
-})(MaxAdContentRating || (MaxAdContentRating = {}));
-// node_modules/@capacitor-community/admob/dist/esm/banner/banner-ad-plugin-events.enum.js
-var BannerAdPluginEvents;
-(function(BannerAdPluginEvents) {
-	/**
-	* Emits when the displayed banner size changes.
-	*/
-	BannerAdPluginEvents["SizeChanged"] = "bannerAdSizeChanged";
-	/**
-	* Emits when a banner ad has loaded.
-	*/
-	BannerAdPluginEvents["Loaded"] = "bannerAdLoaded";
-	/**
-	* Emits when a banner ad fails to load.
-	*/
-	BannerAdPluginEvents["FailedToLoad"] = "bannerAdFailedToLoad";
-	/**
-	* Emits when a banner opens an overlay after the user taps it.
-	*/
-	BannerAdPluginEvents["Opened"] = "bannerAdOpened";
-	/**
-	* Emits when the banner overlay is closed.
-	*/
-	BannerAdPluginEvents["Closed"] = "bannerAdClosed";
-	/**
-	* Emits when an impression is recorded for the banner ad.
-	*/
-	BannerAdPluginEvents["AdImpression"] = "bannerAdImpression";
-	/**
-	* Emits impression-level ad revenue data when a paid event is recorded.
-	*/
-	BannerAdPluginEvents["AdPaid"] = "bannerAdPaid";
-})(BannerAdPluginEvents || (BannerAdPluginEvents = {}));
-// node_modules/@capacitor-community/admob/dist/esm/banner/banner-ad-position.enum.js
-/**
-* @see https://developer.android.com/reference/android/widget/LinearLayout#attr_android:gravity
-*/
-var BannerAdPosition;
-(function(BannerAdPosition) {
-	/**
-	* Positions the banner at the top center of the screen.
-	*/
-	BannerAdPosition["TOP_CENTER"] = "TOP_CENTER";
-	/**
-	* Positions the banner at the center of the screen.
-	*/
-	BannerAdPosition["CENTER"] = "CENTER";
-	/**
-	* Positions the banner at the bottom center of the screen.
-	*/
-	BannerAdPosition["BOTTOM_CENTER"] = "BOTTOM_CENTER";
-})(BannerAdPosition || (BannerAdPosition = {}));
-// node_modules/@capacitor-community/admob/dist/esm/banner/banner-ad-size.enum.js
-/**
-*  For more information:
-*  https://developers.google.com/admob/ios/banner#banner_sizes
-*  https://developers.google.com/android/reference/com/google/android/gms/ads/AdSize
-*
-* */
-var BannerAdSize;
-(function(BannerAdSize) {
-	/**
-	* Mobile Marketing Association (MMA)
-	* banner ad size (320x50 density-independent pixels).
-	*/
-	BannerAdSize["BANNER"] = "BANNER";
-	/**
-	* Interactive Advertising Bureau (IAB)
-	* full banner ad size (468x60 density-independent pixels).
-	*/
-	BannerAdSize["FULL_BANNER"] = "FULL_BANNER";
-	/**
-	* Large banner ad size (320x100 density-independent pixels).
-	*/
-	BannerAdSize["LARGE_BANNER"] = "LARGE_BANNER";
-	/**
-	* Interactive Advertising Bureau (IAB)
-	* medium rectangle ad size (300x250 density-independent pixels).
-	*/
-	BannerAdSize["MEDIUM_RECTANGLE"] = "MEDIUM_RECTANGLE";
-	/**
-	* Interactive Advertising Bureau (IAB)
-	* leaderboard ad size (728x90 density-independent pixels).
-	*/
-	BannerAdSize["LEADERBOARD"] = "LEADERBOARD";
-	/**
-	* A dynamically sized banner that is full-width and auto-height.
-	*/
-	BannerAdSize["ADAPTIVE_BANNER"] = "ADAPTIVE_BANNER";
-	/**
-	* A legacy smart banner sized to the screen width.
-	* Retained for compatibility; use `ADAPTIVE_BANNER` for new integrations.
-	*
-	* @deprecated Use `ADAPTIVE_BANNER` instead.
-	*/
-	BannerAdSize["SMART_BANNER"] = "SMART_BANNER";
-})(BannerAdSize || (BannerAdSize = {}));
-// node_modules/@capacitor-community/admob/dist/esm/interstitial/interstitial-ad-plugin-events.enum.js
-var InterstitialAdPluginEvents;
-(function(InterstitialAdPluginEvents) {
-	/**
-	* Emits when an interstitial ad has loaded and is ready to show.
-	*/
-	InterstitialAdPluginEvents["Loaded"] = "interstitialAdLoaded";
-	/**
-	* Emits when an interstitial ad fails to load.
-	*/
-	InterstitialAdPluginEvents["FailedToLoad"] = "interstitialAdFailedToLoad";
-	/**
-	* Emits when an interstitial ad is shown.
-	*/
-	InterstitialAdPluginEvents["Showed"] = "interstitialAdShowed";
-	/**
-	* Emits when a loaded interstitial ad fails to show.
-	*/
-	InterstitialAdPluginEvents["FailedToShow"] = "interstitialAdFailedToShow";
-	/**
-	* Emits when an interstitial ad is dismissed.
-	*/
-	InterstitialAdPluginEvents["Dismissed"] = "interstitialAdDismissed";
-	/**
-	* Emits impression-level ad revenue data when a paid event is recorded.
-	*/
-	InterstitialAdPluginEvents["AdImpression"] = "interstitialAdImpression";
-})(InterstitialAdPluginEvents || (InterstitialAdPluginEvents = {}));
-// node_modules/@capacitor-community/admob/dist/esm/reward-interstitial/reward-interstitial-ad-plugin-events.enum.js
-var RewardInterstitialAdPluginEvents;
-(function(RewardInterstitialAdPluginEvents) {
-	/**
-	* Emits when a rewarded interstitial ad has loaded and is ready to show.
-	*/
-	RewardInterstitialAdPluginEvents["Loaded"] = "onRewardedInterstitialAdLoaded";
-	/**
-	* Emits when a rewarded interstitial ad fails to load.
-	*/
-	RewardInterstitialAdPluginEvents["FailedToLoad"] = "onRewardedInterstitialAdFailedToLoad";
-	/**
-	* Emits when a rewarded interstitial ad is shown.
-	*/
-	RewardInterstitialAdPluginEvents["Showed"] = "onRewardedInterstitialAdShowed";
-	/**
-	* Emits when a loaded rewarded interstitial ad fails to show.
-	*/
-	RewardInterstitialAdPluginEvents["FailedToShow"] = "onRewardedInterstitialAdFailedToShow";
-	/**
-	* Emits when a rewarded interstitial ad is dismissed.
-	*
-	* This event does not indicate whether the user earned a reward. Listen for
-	* `Rewarded` separately before granting the reward.
-	*/
-	RewardInterstitialAdPluginEvents["Dismissed"] = "onRewardedInterstitialAdDismissed";
-	/**
-	* Emits when the user earns the advertised reward.
-	*/
-	RewardInterstitialAdPluginEvents["Rewarded"] = "onRewardedInterstitialAdReward";
-	/**
-	* Emits impression-level ad revenue data when a paid event is recorded.
-	*/
-	RewardInterstitialAdPluginEvents["AdImpression"] = "onRewardedInterstitialAdImpression";
-})(RewardInterstitialAdPluginEvents || (RewardInterstitialAdPluginEvents = {}));
-// node_modules/@capacitor-community/admob/dist/esm/reward/reward-ad-plugin-events.enum.js
-var RewardAdPluginEvents;
-(function(RewardAdPluginEvents) {
-	/**
-	* Emits when the SDK records a click on a rewarded ad.
-	*/
-	RewardAdPluginEvents["adClicked"] = "onRewardedVideoAdClicked";
-	/**
-	* Emits when a rewarded ad has loaded and is ready to show.
-	*/
-	RewardAdPluginEvents["Loaded"] = "onRewardedVideoAdLoaded";
-	/**
-	* Emits when a rewarded ad fails to load.
-	*/
-	RewardAdPluginEvents["FailedToLoad"] = "onRewardedVideoAdFailedToLoad";
-	/**
-	* Emits when a rewarded ad is shown.
-	*/
-	RewardAdPluginEvents["Showed"] = "onRewardedVideoAdShowed";
-	/**
-	* Emits when a loaded rewarded ad fails to show.
-	*/
-	RewardAdPluginEvents["FailedToShow"] = "onRewardedVideoAdFailedToShow";
-	/**
-	* Emits when a rewarded ad is dismissed.
-	*
-	* This event does not indicate whether the user earned a reward. Listen for
-	* `Rewarded` separately before granting the reward.
-	*/
-	RewardAdPluginEvents["Dismissed"] = "onRewardedVideoAdDismissed";
-	/**
-	* Emits when the user earns the advertised reward.
-	*/
-	RewardAdPluginEvents["Rewarded"] = "onRewardedVideoAdReward";
-	/**
-	* Emits impression-level ad revenue data when a paid event is recorded.
-	*/
-	RewardAdPluginEvents["AdImpression"] = "onRewardedVideoAdImpression";
-})(RewardAdPluginEvents || (RewardAdPluginEvents = {}));
-// node_modules/@capacitor-community/admob/dist/esm/consent/consent-status.enum.js
-/**
-*  For more information:
-*  https://developers.google.com/admob/unity/reference/namespace/google-mobile-ads/ump/api#consentstatus
-*
-* */
-var AdmobConsentStatus;
-(function(AdmobConsentStatus) {
-	/**
-	* User consent not required.
-	*/
-	AdmobConsentStatus["NOT_REQUIRED"] = "NOT_REQUIRED";
-	/**
-	* User consent already obtained.
-	*/
-	AdmobConsentStatus["OBTAINED"] = "OBTAINED";
-	/**
-	* User consent required but not yet obtained.
-	*/
-	AdmobConsentStatus["REQUIRED"] = "REQUIRED";
-	/**
-	* Unknown consent status, AdsConsent.requestInfoUpdate needs to be called to update it.
-	*/
-	AdmobConsentStatus["UNKNOWN"] = "UNKNOWN";
-})(AdmobConsentStatus || (AdmobConsentStatus = {}));
-// node_modules/@capacitor-community/admob/dist/esm/consent/consent-debug-geography.enum.js
-/**
-*  For more information:
-*  https://developers.google.com/admob/unity/reference/namespace/google-mobile-ads/ump/api#debuggeography
-*
-* */
-var AdmobConsentDebugGeography;
-(function(AdmobConsentDebugGeography) {
-	/**
-	* Debug geography disabled.
-	*/
-	AdmobConsentDebugGeography[AdmobConsentDebugGeography["DISABLED"] = 0] = "DISABLED";
-	/**
-	* Geography appears as in EEA for debug devices.
-	*/
-	AdmobConsentDebugGeography[AdmobConsentDebugGeography["EEA"] = 1] = "EEA";
-	/**
-	* Geography appears as not in EEA for debug devices.
-	* @deprecated
-	*/
-	AdmobConsentDebugGeography[AdmobConsentDebugGeography["NOT_EEA"] = 2] = "NOT_EEA";
-	/**
-	* Geography appears as in regulated US state for debug devices.
-	*/
-	AdmobConsentDebugGeography[AdmobConsentDebugGeography["US"] = 3] = "US";
-	/**
-	* Geography appears as OTHER state for debug devices.
-	*/
-	AdmobConsentDebugGeography[AdmobConsentDebugGeography["OTHER"] = 4] = "OTHER";
-})(AdmobConsentDebugGeography || (AdmobConsentDebugGeography = {}));
-// node_modules/@capacitor-community/admob/dist/esm/shared/ad-mob-revenue-data.interface.js
-/**
-* The precision of an impression-level ad value.
-*/
-var AdValuePrecision;
-(function(AdValuePrecision) {
-	/**
-	* The ad value precision is unknown.
-	*/
-	AdValuePrecision[AdValuePrecision["Unknown"] = 0] = "Unknown";
-	/**
-	* The ad value is estimated from aggregated data.
-	*/
-	AdValuePrecision[AdValuePrecision["Estimated"] = 1] = "Estimated";
-	/**
-	* The ad value was provided by the publisher.
-	*/
-	AdValuePrecision[AdValuePrecision["PublisherProvided"] = 2] = "PublisherProvided";
-	/**
-	* The ad value is the precise value paid for this ad.
-	*/
-	AdValuePrecision[AdValuePrecision["Precise"] = 3] = "Precise";
-})(AdValuePrecision || (AdValuePrecision = {}));
-// node_modules/@capacitor-community/admob/dist/esm/app-open/app-open-ad-plugin-events.enum.js
-var AppOpenAdPluginEvents;
-(function(AppOpenAdPluginEvents) {
-	/**
-	* Emits when an App Open ad has loaded.
-	*/
-	AppOpenAdPluginEvents["Loaded"] = "appOpenAdLoaded";
-	/**
-	* Emits when an App Open ad fails to load.
-	*/
-	AppOpenAdPluginEvents["FailedToLoad"] = "appOpenAdFailedToLoad";
-	/**
-	* Emits when an App Open ad is shown.
-	*/
-	AppOpenAdPluginEvents["Opened"] = "appOpenAdOpened";
-	/**
-	* Emits when an App Open ad is dismissed.
-	*/
-	AppOpenAdPluginEvents["Closed"] = "appOpenAdClosed";
-	/**
-	* Emits when a loaded App Open ad fails to show.
-	*/
-	AppOpenAdPluginEvents["FailedToShow"] = "appOpenAdFailedToShow";
-	/**
-	* Emits impression-level ad revenue data when a paid event is recorded.
-	*/
-	AppOpenAdPluginEvents["AdImpression"] = "appOpenAdImpression";
-})(AppOpenAdPluginEvents || (AppOpenAdPluginEvents = {}));
-// node_modules/@capacitor-community/admob/dist/esm/native-ads/native-ad-plugin-events.enum.js
-var NativeAdPluginEvents;
-(function(NativeAdPluginEvents) {
-	NativeAdPluginEvents["Loaded"] = "nativeAdLoaded";
-	NativeAdPluginEvents["FailedToLoad"] = "nativeAdFailedToLoad";
-	NativeAdPluginEvents["Clicked"] = "nativeAdClicked";
-	NativeAdPluginEvents["AdImpression"] = "nativeAdImpression";
-	NativeAdPluginEvents["Opened"] = "nativeAdOpened";
-	NativeAdPluginEvents["Closed"] = "nativeAdClosed";
-	NativeAdPluginEvents["AdPaid"] = "nativeAdPaid";
-})(NativeAdPluginEvents || (NativeAdPluginEvents = {}));
-// \0vite/preload-helper.js
-var scriptRel = "modulepreload";
-var assetsURL = function(dep) {
-	return "/" + dep;
-};
-var seen = {};
-var isCssPreloadUrl = function isCssPreloadUrl(url) {
-	return url.pathname.endsWith(".css");
-};
-var preloadOnce = function preloadOnce(seen, href, preload) {
-	if (href in seen) return seen[href];
-	const promise = preload();
-	if (!promise) {
-		seen[href] = void 0;
-		return;
-	}
-	const preloadPromise = promise.then(() => {
-		seen[href] = void 0;
-	}, (err) => {
-		seen[href] = void 0;
-		throw err;
-	});
-	seen[href] = preloadPromise;
-	return preloadPromise;
-};
-var __vitePreload = function preload(baseModule, deps, importerUrl) {
-	let promise = Promise.resolve();
-	if (deps && deps.length > 0) {
-		let preloadedHrefs;
-		const cspNonceMeta = document.querySelector("meta[property=csp-nonce]");
-		const cspNonce = cspNonceMeta?.nonce || cspNonceMeta?.getAttribute("nonce");
-		function allSettled(promises) {
-			return Promise.all(promises.map((p) => Promise.resolve(p).then((value) => ({
-				status: "fulfilled",
-				value
-			}), (reason) => ({
-				status: "rejected",
-				reason
-			}))));
-		}
-		function importMetaResolve(specifier) {
-			if (import.meta.resolve) return new URL(import.meta.resolve(specifier));
-			return new URL(
-				specifier,
-				/** #__KEEP__ */
-				import.meta.url
-			);
-		}
-		promise = allSettled(deps.map((depString) => {
-			depString = assetsURL(depString, importerUrl);
-			const dep = importMetaResolve(depString);
-			const isCss = isCssPreloadUrl(dep);
-			return preloadOnce(seen, dep.href, () => {
-				if (preloadedHrefs === void 0) {
-					preloadedHrefs = {
-						all: /* @__PURE__ */ new Set(),
-						styles: /* @__PURE__ */ new Set()
-					};
-					const links = document.getElementsByTagName("link");
-					for (let i = links.length - 1; i >= 0; i--) {
-						const link = links[i];
-						preloadedHrefs.all.add(link.href);
-						if (link.rel === "stylesheet") preloadedHrefs.styles.add(link.href);
-					}
-				}
-				if ((isCss ? preloadedHrefs.styles : preloadedHrefs.all).has(dep.href)) return;
-				const link = document.createElement("link");
-				link.rel = isCss ? "stylesheet" : scriptRel;
-				if (!isCss) link.as = "script";
-				link.crossOrigin = "";
-				link.href = dep.href;
-				if (cspNonce) link.setAttribute("nonce", cspNonce);
-				document.head.appendChild(link);
-				if (isCss) return new Promise((res, rej) => {
-					const handleSettle = (e) => {
-						link.removeEventListener("load", handleSettle);
-						link.removeEventListener("error", handleSettle);
-						if (e.type === "error") rej(/* @__PURE__ */ new Error(`Unable to preload CSS for ${dep}`));
-						else res(e);
-					};
-					link.addEventListener("load", handleSettle);
-					link.addEventListener("error", handleSettle);
-				});
-			});
-		}).filter((p) => p !== void 0));
-	}
-	function handlePreloadError(err) {
-		const e = new Event("vite:preloadError", { cancelable: true });
-		e.payload = err;
-		window.dispatchEvent(e);
-		if (!e.defaultPrevented) throw err;
-	}
-	return promise.then((res) => {
-		for (const item of res || []) {
-			if (item.status !== "rejected") continue;
-			handlePreloadError(item.reason);
-		}
-		return baseModule().catch(handlePreloadError);
-	});
-};
-var AdMob = registerPlugin("AdMob", { web: () => __vitePreload(() => import("./web-DwjSPnpp.js").then((m) => new m.AdMobWeb()), []) });
-// src/lib/admobBridge.ts
-var AD_TIMEOUT_MS = 12e3;
-var STATUS_LISTENERS = /* @__PURE__ */ new Set();
-var lastInitializedKey = "";
-var initPromise = null;
-var listenersAttached = false;
-var nativeBannerVisible = false;
-var rewardedInFlight = false;
-var latestRuntimeRef = {
-	current: null,
-	consent: false
-};
-var currentStatus = {
-	channel: "web-pwa",
-	isNativeAndroid: false,
-	webPwa: {
-		status: "placeholder",
-		banner: "placeholder",
-		interstitial: "native-android-only",
-		rewarded: "native-android-only",
-		message: "Browser preview renders development placeholders only. Native Google Mobile Ads SDK executes inside the Android APK."
-	},
-	android: {
-		sdkState: "not-running-in-browser",
-		sdkError: null,
-		consentStatus: AdmobConsentStatus.UNKNOWN,
-		canRequestAds: false,
-		privacyOptionsRequired: false,
-		bannerState: "idle",
-		bannerError: null,
-		interstitialState: "idle",
-		interstitialError: null,
-		rewardedState: "idle",
-		rewardedError: null,
-		isTestMode: true,
-		appId: ""
-	},
-	lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
-};
-function isOnline() {
-	return typeof navigator === "undefined" ? true : navigator.onLine !== false;
-}
-function isDebugEnvironment() {
-	return Boolean(false);
-}
-function emitStatus() {
-	for (const listener of STATUS_LISTENERS) listener(currentStatus);
-}
-function updateTopStatus(patch) {
-	currentStatus = {
-		...currentStatus,
-		...patch,
-		lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
-	};
-	emitStatus();
-}
-function updateWebPwaStatus(patch) {
-	currentStatus = {
-		...currentStatus,
-		webPwa: {
-			...currentStatus.webPwa,
-			...patch
-		},
-		lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
-	};
-	emitStatus();
-}
-function updateAndroidStatus(patch) {
-	currentStatus = {
-		...currentStatus,
-		android: {
-			...currentStatus.android,
-			...patch
-		},
-		lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
-	};
-	emitStatus();
-}
-function getAdMobIntegrationStatus() {
-	return currentStatus;
-}
-function subscribeAdMobStatus(listener) {
-	STATUS_LISTENERS.add(listener);
-	listener(currentStatus);
-	return () => {
-		STATUS_LISTENERS.delete(listener);
-	};
-}
-function detectAdMobRuntime() {
-	if (Capacitor.isNativePlatform()) return Capacitor.getPlatform() === "ios" ? "capacitor-ios" : "capacitor-android";
-	return "web-pwa";
-}
-function getAdMobRuntimeLabel(channel) {
-	switch (channel) {
-		case "capacitor-android": return "Native Android Google Mobile Ads SDK";
-		case "capacitor-ios": return "Native iOS Google Mobile Ads SDK";
-		default: return "Web / PWA Browser Preview (Development Placeholder Only)";
-	}
-}
-function withTimeout(promise, timeoutMs, message) {
-	return new Promise((resolve, reject) => {
-		const timer = window.setTimeout(() => {
-			reject(new Error(message));
-		}, timeoutMs);
-		promise.then((val) => {
-			window.clearTimeout(timer);
-			resolve(val);
-		}, (err) => {
-			window.clearTimeout(timer);
-			reject(err);
-		});
-	});
-}
-function attachNativeListenersOnce() {
-	if (listenersAttached || !Capacitor.isNativePlatform()) return;
-	listenersAttached = true;
-	AdMob.addListener(BannerAdPluginEvents.Loaded, () => {
-		nativeBannerVisible = true;
-		updateAndroidStatus({
-			bannerState: "loaded",
-			bannerError: null
-		});
-	});
-	AdMob.addListener(BannerAdPluginEvents.AdImpression, () => {
-		nativeBannerVisible = true;
-		updateAndroidStatus({
-			bannerState: "displayed",
-			bannerError: null
-		});
-	});
-	AdMob.addListener(BannerAdPluginEvents.Opened, () => {
-		nativeBannerVisible = true;
-		updateAndroidStatus({ bannerState: "displayed" });
-	});
-	AdMob.addListener(BannerAdPluginEvents.Closed, () => {
-		updateAndroidStatus({ bannerState: "idle" });
-	});
-	AdMob.addListener(BannerAdPluginEvents.FailedToLoad, (err) => {
-		nativeBannerVisible = false;
-		updateAndroidStatus({
-			bannerState: "failed",
-			bannerError: `Code ${err.code}: ${err.message}`
-		});
-		hideNativeBannerAd();
-	});
-	AdMob.addListener(InterstitialAdPluginEvents.Loaded, () => {
-		updateAndroidStatus({
-			interstitialState: "loaded",
-			interstitialError: null
-		});
-	});
-	AdMob.addListener(InterstitialAdPluginEvents.FailedToLoad, (err) => {
-		updateAndroidStatus({
-			interstitialState: "failed",
-			interstitialError: `Load failed (${err.code}): ${err.message}`
-		});
-	});
-	AdMob.addListener(InterstitialAdPluginEvents.Showed, () => {
-		updateAndroidStatus({
-			interstitialState: "displayed",
-			interstitialError: null
-		});
-	});
-	AdMob.addListener(InterstitialAdPluginEvents.FailedToShow, (err) => {
-		updateAndroidStatus({
-			interstitialState: "failed",
-			interstitialError: `Display failed (${err.code}): ${err.message}`
-		});
-	});
-	AdMob.addListener(InterstitialAdPluginEvents.Dismissed, () => {
-		updateAndroidStatus({ interstitialState: "dismissed" });
-		if (latestRuntimeRef.current) preloadInterstitialAd(latestRuntimeRef.current, latestRuntimeRef.consent);
-	});
-	AdMob.addListener(RewardAdPluginEvents.Loaded, () => {
-		updateAndroidStatus({
-			rewardedState: "loaded",
-			rewardedError: null
-		});
-	});
-	AdMob.addListener(RewardAdPluginEvents.FailedToLoad, (err) => {
-		updateAndroidStatus({
-			rewardedState: "failed",
-			rewardedError: `Load failed (${err.code}): ${err.message}`
-		});
-	});
-	AdMob.addListener(RewardAdPluginEvents.Showed, () => {
-		updateAndroidStatus({
-			rewardedState: "displayed",
-			rewardedError: null
-		});
-	});
-	AdMob.addListener(RewardAdPluginEvents.FailedToShow, (err) => {
-		updateAndroidStatus({
-			rewardedState: "failed",
-			rewardedError: `Display failed (${err.code}): ${err.message}`
-		});
-	});
-	AdMob.addListener(RewardAdPluginEvents.Dismissed, () => {
-		updateAndroidStatus({ rewardedState: "dismissed" });
-	});
-}
-async function syncUMPUserConsent(consentAccepted) {
-	if (!Capacitor.isNativePlatform()) {
-		updateAndroidStatus({
-			consentStatus: consentAccepted ? AdmobConsentStatus.OBTAINED : AdmobConsentStatus.REQUIRED,
-			canRequestAds: false,
-			privacyOptionsRequired: false
-		});
-		return false;
-	}
-	try {
-		let info = await withTimeout(AdMob.requestConsentInfo({ tagForUnderAgeOfConsent: false }), AD_TIMEOUT_MS, "Google UMP consent request timed out.");
-		if (info.isConsentFormAvailable && info.status === AdmobConsentStatus.REQUIRED) info = await AdMob.showConsentForm();
-		updateAndroidStatus({
-			consentStatus: info.status,
-			canRequestAds: info.canRequestAds,
-			privacyOptionsRequired: String(info.privacyOptionsRequirementStatus) === "REQUIRED"
-		});
-		return info.canRequestAds;
-	} catch (error) {
-		updateAndroidStatus({ sdkError: error instanceof Error ? error.message : "Google UMP consent check failed." });
-		return true;
-	}
-}
-async function openAdPrivacyOptions() {
-	if (Capacitor.isNativePlatform()) try {
-		await AdMob.showPrivacyOptionsForm();
-		await syncUMPUserConsent(true);
-		return "native_opened";
-	} catch {
-		await AdMob.resetConsentInfo().catch(() => void 0);
-		await syncUMPUserConsent(false);
-		return "native_opened";
-	}
-	return "web_reset";
-}
-async function initializeAdMobRuntime(settings, consentAccepted) {
-	latestRuntimeRef.current = settings;
-	latestRuntimeRef.consent = consentAccepted;
-	const config = resolveEffectiveAdMobConfig(settings, { forceTestMode: isDebugEnvironment() });
-	const channel = detectAdMobRuntime();
-	const isNative = Capacitor.isNativePlatform();
-	const online = isOnline();
-	if (!isNative) {
-		const initialNativeFormats = buildInitialAndroidFormatStates(config, online);
-		updateTopStatus({
-			channel,
-			isNativeAndroid: false,
-			webPwa: {
-				status: !online ? "offline" : config.bannerAdsEnabled ? "placeholder" : "disabled",
-				banner: !online ? "offline" : config.bannerAdsEnabled ? "placeholder" : "disabled",
-				interstitial: config.interstitialAdsEnabled ? "native-android-only" : "disabled",
-				rewarded: config.rewardedAdsEnabled ? "native-android-only" : "disabled",
-				message: !online ? "Browser is offline. Development placeholder paused." : "Web/PWA browser preview active: displaying development placeholder only (zero native SDK calls or fake impressions)."
-			},
-			android: {
-				...currentStatus.android,
-				sdkState: "not-running-in-browser",
-				sdkError: null,
-				consentStatus: consentAccepted ? AdmobConsentStatus.OBTAINED : AdmobConsentStatus.REQUIRED,
-				canRequestAds: false,
-				privacyOptionsRequired: false,
-				bannerState: initialNativeFormats.bannerState,
-				interstitialState: initialNativeFormats.interstitialState,
-				rewardedState: initialNativeFormats.rewardedState,
-				isTestMode: config.isTestMode,
-				appId: config.appId
-			}
-		});
-		return;
-	}
-	if (!online) {
-		const offlineFormats = buildInitialAndroidFormatStates(config, false);
-		updateTopStatus({
-			channel,
-			isNativeAndroid: true,
-			webPwa: {
-				status: "disabled",
-				banner: "disabled",
-				interstitial: "disabled",
-				rewarded: "disabled",
-				message: "Running inside native Android shell."
-			},
-			android: {
-				...currentStatus.android,
-				sdkState: "offline",
-				sdkError: "Device is offline; AdMob requests paused safely.",
-				...offlineFormats,
-				isTestMode: config.isTestMode,
-				appId: config.appId
-			}
-		});
-		return;
-	}
-	const initKey = `${channel}:${config.isTestMode ? "test" : "prod"}:${config.appId}:${consentAccepted ? "1" : "0"}`;
-	if (lastInitializedKey === initKey && currentStatus.android.sdkState === "initialized") {
-		updateAndroidStatus({
-			isTestMode: config.isTestMode,
-			appId: config.appId,
-			bannerState: config.bannerAdsEnabled ? currentStatus.android.bannerState : "disabled",
-			interstitialState: config.interstitialAdsEnabled ? currentStatus.android.interstitialState : "disabled",
-			rewardedState: config.rewardedAdsEnabled ? currentStatus.android.rewardedState : "disabled"
-		});
-		return;
-	}
-	if (initPromise) return initPromise;
-	initPromise = (async () => {
-		const initialStates = buildInitialAndroidFormatStates(config, true);
-		updateTopStatus({
-			channel,
-			isNativeAndroid: true,
-			webPwa: {
-				status: "disabled",
-				banner: "disabled",
-				interstitial: "disabled",
-				rewarded: "disabled",
-				message: "Running inside native Android shell."
-			},
-			android: {
-				...currentStatus.android,
-				sdkState: "initializing",
-				sdkError: null,
-				...initialStates,
-				bannerError: null,
-				interstitialError: null,
-				rewardedError: null,
-				isTestMode: config.isTestMode,
-				appId: config.appId
-			}
-		});
-		try {
-			attachNativeListenersOnce();
-			await withTimeout(AdMob.initialize({
-				initializeForTesting: config.isTestMode,
-				maxAdContentRating: MaxAdContentRating.Teen,
-				tagForChildDirectedTreatment: false,
-				tagForUnderAgeOfConsent: false
-			}), AD_TIMEOUT_MS, "Google Mobile Ads SDK initialization timed out.");
-			const canRequestAds = await syncUMPUserConsent(consentAccepted);
-			lastInitializedKey = initKey;
-			updateAndroidStatus({
-				sdkState: "initialized",
-				sdkError: null,
-				canRequestAds,
-				...buildInitialAndroidFormatStates(config, true)
-			});
-			if (canRequestAds && config.interstitialAdsEnabled) preloadInterstitialAd(settings, consentAccepted);
-		} catch (error) {
-			updateAndroidStatus({
-				sdkState: "error",
-				sdkError: error instanceof Error ? error.message : "Google Mobile Ads SDK initialization failed."
-			});
-		}
-	})().finally(() => {
-		initPromise = null;
-	});
-	return initPromise;
-}
-async function syncBannerForScreen(settings, screen, consentAccepted) {
-	const config = resolveEffectiveAdMobConfig(settings, { forceTestMode: isDebugEnvironment() });
-	const online = isOnline();
-	if (!Capacitor.isNativePlatform()) {
-		const allowedWeb = screen !== "admin" && shouldDisplayBannerAtScreen(settings, screen);
-		updateWebPwaStatus({
-			status: !online ? "offline" : allowedWeb ? "placeholder" : "disabled",
-			banner: !online ? "offline" : allowedWeb ? "placeholder" : "disabled"
-		});
-		return;
-	}
-	if (!(screen !== "admin" && config.bannerAdsEnabled && shouldDisplayBannerAtScreen(settings, screen) && online && currentStatus.android.sdkState === "initialized" && currentStatus.android.canRequestAds)) {
-		await hideNativeBannerAd();
-		updateAndroidStatus({ bannerState: !online ? "offline" : config.bannerAdsEnabled ? "idle" : "disabled" });
-		return;
-	}
-	try {
-		updateAndroidStatus({
-			bannerState: "loading",
-			bannerError: null
-		});
-		await withTimeout(AdMob.showBanner({
-			adId: config.bannerId,
-			adSize: BannerAdSize.ADAPTIVE_BANNER,
-			position: BannerAdPosition.BOTTOM_CENTER,
-			margin: 72,
-			isTesting: config.isTestMode,
-			npa: !consentAccepted
-		}), AD_TIMEOUT_MS, "Banner ad request timed out.");
-	} catch (error) {
-		nativeBannerVisible = false;
-		updateAndroidStatus({
-			bannerState: "failed",
-			bannerError: error instanceof Error ? error.message : "Banner ad request failed."
-		});
-		await hideNativeBannerAd();
-	}
-}
-async function hideNativeBannerAd() {
-	if (Capacitor.isNativePlatform() && nativeBannerVisible) {
-		try {
-			await AdMob.hideBanner();
-		} catch {}
-		nativeBannerVisible = false;
-	}
-}
-async function preloadInterstitialAd(settings, consentAccepted) {
-	if (!Capacitor.isNativePlatform()) return false;
-	const config = resolveEffectiveAdMobConfig(settings, { forceTestMode: isDebugEnvironment() });
-	if (!config.interstitialAdsEnabled) {
-		updateAndroidStatus({
-			interstitialState: "disabled",
-			interstitialError: null
-		});
-		return false;
-	}
-	if (!isOnline()) {
-		updateAndroidStatus({ interstitialState: "offline" });
-		return false;
-	}
-	if (currentStatus.android.sdkState !== "initialized" || !currentStatus.android.canRequestAds) return false;
-	if (currentStatus.android.interstitialState === "loading") return false;
-	if (canDisplayLoadedAd(currentStatus.android.interstitialState)) return true;
-	try {
-		updateAndroidStatus({
-			interstitialState: "loading",
-			interstitialError: null
-		});
-		await withTimeout(AdMob.prepareInterstitial({
-			adId: config.interstitialId,
-			isTesting: config.isTestMode,
-			npa: !consentAccepted,
-			immersiveMode: false
-		}), AD_TIMEOUT_MS, "Interstitial ad preload timed out.");
-		updateAndroidStatus({
-			interstitialState: "loaded",
-			interstitialError: null
-		});
-		return true;
-	} catch (error) {
-		updateAndroidStatus({
-			interstitialState: "failed",
-			interstitialError: error instanceof Error ? error.message : "Interstitial preload failed."
-		});
-		return false;
-	}
-}
-/**
-* Displays a native Android interstitial ONLY when:
-* 1. Running inside Capacitor native Android
-* 2. The interstitial ad request actually succeeded (`interstitialState === 'loaded'`)
-* Never blocks navigation or tournament participation if loading failed or is in progress.
-*/
-async function showNativeInterstitialAd(settings, consentAccepted) {
-	if (!Capacitor.isNativePlatform()) return false;
-	if (!resolveEffectiveAdMobConfig(settings, { forceTestMode: isDebugEnvironment() }).interstitialAdsEnabled || !isOnline() || currentStatus.android.sdkState !== "initialized" || !currentStatus.android.canRequestAds) return false;
-	if (!canDisplayLoadedAd(currentStatus.android.interstitialState)) {
-		if (currentStatus.android.interstitialState === "idle" || currentStatus.android.interstitialState === "dismissed") preloadInterstitialAd(settings, consentAccepted);
-		return false;
-	}
-	try {
-		await withTimeout(AdMob.showInterstitial(), AD_TIMEOUT_MS, "Interstitial ad display timed out.");
-		return true;
-	} catch (error) {
-		updateAndroidStatus({
-			interstitialState: "failed",
-			interstitialError: error instanceof Error ? error.message : "Interstitial show failed."
-		});
-		return false;
-	}
-}
-async function runNativeRewardedAd(settings, consentAccepted, dismissMessage) {
-	const config = resolveEffectiveAdMobConfig(settings, { forceTestMode: isDebugEnvironment() });
-	if (!config.rewardedAdsEnabled) {
-		if (Capacitor.isNativePlatform()) updateAndroidStatus({ rewardedState: "disabled" });
-		return {
-			outcome: "disabled",
-			error: "Rewarded ads are currently disabled by admin."
-		};
-	}
-	if (!isOnline()) {
-		if (Capacitor.isNativePlatform()) updateAndroidStatus({ rewardedState: "offline" });
-		return {
-			outcome: "offline",
-			error: "No internet connection. Connect to watch an ad."
-		};
-	}
-	if (!Capacitor.isNativePlatform()) return {
-		outcome: "native_unavailable",
-		error: "Web/PWA browser preview cannot run the native Google Mobile Ads SDK. Test Rewarded Ads in the Android APK build (zero fake impressions generated in browser)."
-	};
-	if (currentStatus.android.sdkState !== "initialized" || !currentStatus.android.canRequestAds) {
-		const errMsg = currentStatus.android.sdkError || "Google Mobile Ads SDK is not initialized yet. Try again shortly.";
-		updateAndroidStatus({
-			rewardedState: "failed",
-			rewardedError: errMsg
-		});
-		return {
-			outcome: "failed",
-			error: errMsg
-		};
-	}
-	if (rewardedInFlight) return {
-		outcome: "failed",
-		error: "A rewarded ad request is already in progress."
-	};
-	rewardedInFlight = true;
-	let rewardHandle = null;
-	try {
-		updateAndroidStatus({
-			rewardedState: "loading",
-			rewardedError: null
-		});
-		let earnedReward = false;
-		rewardHandle = await AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
-			earnedReward = true;
-		});
-		await withTimeout(AdMob.prepareRewardVideoAd({
-			adId: config.rewardedId,
-			isTesting: config.isTestMode,
-			npa: !consentAccepted,
-			immersiveMode: false
-		}), AD_TIMEOUT_MS, "Rewarded video took too long to load. Please try again.");
-		updateAndroidStatus({
-			rewardedState: "loaded",
-			rewardedError: null
-		});
-		const rewardItem = await withTimeout(AdMob.showRewardVideoAd(), 6e4, "Rewarded ad session timed out.");
-		if (rewardItem && typeof rewardItem.amount === "number" && rewardItem.amount > 0) earnedReward = true;
-		if (earnedReward) {
-			updateAndroidStatus({
-				rewardedState: "dismissed",
-				rewardedError: null
-			});
-			return { outcome: "rewarded" };
-		}
-		return {
-			outcome: "dismissed",
-			error: dismissMessage
-		};
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Rewarded ad failed to load.";
-		updateAndroidStatus({
-			rewardedState: "failed",
-			rewardedError: message
-		});
-		return {
-			outcome: "failed",
-			error: message
-		};
-	} finally {
-		await rewardHandle?.remove().catch(() => void 0);
-		rewardedInFlight = false;
-	}
-}
-async function showRewardedAdForCosmetic(settings, consentAccepted) {
-	return runNativeRewardedAd(settings, consentAccepted, "Ad closed before completion. Watch the full ad to unlock the cosmetic emblem.");
-}
-async function showRewardedAdForWithdrawal(settings, consentAccepted) {
-	return runNativeRewardedAd(settings, consentAccepted, "Ad closed early. Watch the full rewarded ad to submit your withdrawal request.");
-}
-function registerAdMobLifecycle(params) {
-	if (typeof window === "undefined" || typeof document === "undefined") return () => void 0;
-	const onVisibilityChange = () => {
-		const settings = params.getSettings();
-		const consent = params.getConsent();
-		const screen = params.getScreen();
-		if (document.visibilityState === "hidden") {
-			if (Capacitor.isNativePlatform()) hideNativeBannerAd();
-		} else if (document.visibilityState === "visible") initializeAdMobRuntime(settings, consent).then(() => syncBannerForScreen(settings, screen, consent));
-	};
-	const onOnline = () => {
-		const settings = params.getSettings();
-		const consent = params.getConsent();
-		lastInitializedKey = "";
-		initializeAdMobRuntime(settings, consent).then(() => syncBannerForScreen(settings, params.getScreen(), consent));
-	};
-	const onOffline = () => {
-		hideNativeBannerAd();
-		if (Capacitor.isNativePlatform()) updateAndroidStatus({
-			sdkState: "offline",
-			bannerState: "offline",
-			interstitialState: "offline",
-			rewardedState: "offline",
-			sdkError: "Device offline; AdMob requests paused."
-		});
-		else updateWebPwaStatus({
-			status: "offline",
-			banner: "offline",
-			message: "Browser offline; development placeholder paused."
-		});
-	};
-	document.addEventListener("visibilitychange", onVisibilityChange);
-	window.addEventListener("online", onOnline);
-	window.addEventListener("offline", onOffline);
-	return () => {
-		document.removeEventListener("visibilitychange", onVisibilityChange);
-		window.removeEventListener("online", onOnline);
-		window.removeEventListener("offline", onOffline);
-	};
-}
-// src/components/AdMobUnits.tsx
-function AdMobBannerSlot({ settings, screen = "home", placementLabel = "Arena Sponsor", consentAccepted = true, onAcceptConsent }) {
-	const [status, setStatus] = (0, import_react.useState)(() => getAdMobIntegrationStatus());
-	(0, import_react.useEffect)(() => {
-		return subscribeAdMobStatus(setStatus);
-	}, []);
-	const config = resolveEffectiveAdMobConfig(settings, { forceTestMode: Boolean(false) });
-	const allowedByPlacement = shouldDisplayBannerAtScreen(settings, screen);
-	const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
-	if (!allowedByPlacement || isOffline) return null;
-	if (status.isNativeAndroid) {
-		if (!(status.android.bannerState === "loaded" || status.android.bannerState === "displayed")) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-			className: "mt-6 h-16",
-			"aria-hidden": "true"
-		});
-	}
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("aside", {
-		"aria-label": "AdMob Development Placeholder",
-		"data-testid": "admob-web-placeholder",
-		className: "mt-8 rounded-xl border border-dashed border-white/15 bg-[#121216] p-4 space-y-2.5",
-		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: "flex flex-col sm:flex-row sm:items-center justify-between gap-3",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "space-y-1",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "flex flex-wrap items-center gap-2 text-xs text-zinc-400",
-					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-							className: "inline-flex items-center gap-1 font-semibold text-amber-300",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Smartphone, { className: "w-3.5 h-3.5" }), "Dev Placeholder"]
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							"aria-hidden": "true",
-							children: "·"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
-							"Google AdMob (",
-							config.isTestMode ? "Official Test IDs" : "Production Config",
-							")"
-						] }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							"aria-hidden": "true",
-							children: "·"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: placementLabel })
-					]
-				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-					className: "text-xs sm:text-sm font-medium text-zinc-200",
-					children: "Web/PWA preview placeholder — live Google Mobile Ads SDK banners render inside the native Android APK build (zero fake impressions or clicks generated in browser)."
-				})]
-			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "flex flex-wrap items-center gap-3 shrink-0",
-				children: [!consentAccepted && onAcceptConsent && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-					type: "button",
-					onClick: onAcceptConsent,
-					className: "min-h-[36px] px-3 py-1.5 rounded-lg border border-white/15 bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-white inline-flex items-center gap-1.5",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { className: "w-3.5 h-3.5 text-[#E11D48]" }), "Accept Ad Consent"]
-				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "text-right space-y-0.5",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "text-[11px] font-mono-tabular text-zinc-400",
-						children: ["Unit: ", config.bannerId]
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "text-[10px] font-mono-tabular text-zinc-500",
-						children: ["App: ", config.appId]
-					})]
-				})]
-			})]
-		})
-	});
-}
 // src/components/HomeView.tsx
-function HomeView({ profile, isSignedIn, isEmailVerified: _isEmailVerified, tournaments, results, announcements, leaderboard, registeredTournamentIds, adminSettings, consentAccepted, onAcceptConsent, onSelectTournament, onNavigateTab, onOpenAuth, onToast: _onToast }) {
+function HomeView({ profile, isSignedIn, isEmailVerified: _isEmailVerified, tournaments, results, announcements, leaderboard, adminSettings, registeredTournamentIds, onSelectTournament, onNavigateTab, onOpenAuth, onToast }) {
 	const [avatarError, setAvatarError] = (0, import_react.useState)(false);
 	const [heroImgError, setHeroImgError] = (0, import_react.useState)(false);
+	const [supportBannerDismissed, setSupportBannerDismissed] = (0, import_react.useState)(false);
+	const supportInfo = getTelegramSupportInfo(adminSettings);
 	const featured = tournaments.find((t) => t.featured && t.status !== "cancelled") || tournaments.find((t) => t.status === "upcoming") || tournaments[0];
 	(0, import_react.useEffect)(() => {
 		setHeroImgError(false);
@@ -54531,6 +53426,41 @@ function HomeView({ profile, isSignedIn, isEmailVerified: _isEmailVerified, tour
 					})
 				})]
 			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+				"aria-label": "100% Trusted App",
+				className: "rounded-xl border border-emerald-500/30 bg-[#121216] px-4 py-4 sm:px-6 flex flex-col md:flex-row md:items-center justify-between gap-4",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex items-start sm:items-center gap-3.5",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "w-10 h-10 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { className: "w-5 h-5 text-emerald-400" })
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "space-y-0.5",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", {
+							className: "font-display text-base sm:text-lg font-bold text-white",
+							children: "100% Trusted App · Verified Fair Play & Payouts"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: "text-xs text-zinc-400",
+							children: "Admin-audited match results · 1 Coin = ₹1 direct UPI payouts (Min ₹50) · 24/7 Telegram customer support"
+						})]
+					})]
+				}), supportInfo.configured ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("a", {
+					href: supportInfo.url,
+					target: "_blank",
+					rel: "noopener noreferrer",
+					className: "min-h-[40px] px-4 py-2 rounded-lg border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 text-xs font-semibold text-sky-300 inline-flex items-center justify-center gap-2 shrink-0 transition-colors",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(MessageCircle, { className: "w-4 h-4" }),
+						"Customer Support",
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExternalLink, { className: "w-3.5 h-3.5" })
+					]
+				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+					type: "button",
+					onClick: () => onToast("Telegram support link is being connected by the admin. Please check back shortly."),
+					className: "min-h-[40px] px-4 py-2 rounded-lg border border-white/15 bg-[#09090B] hover:bg-white/5 text-xs font-semibold text-zinc-200 inline-flex items-center justify-center gap-2 shrink-0 transition-colors",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(MessageCircle, { className: "w-4 h-4 text-sky-400" }), "Customer Support"]
+				})]
+			}),
 			featured && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("section", {
 				"aria-label": "Featured Tournament",
 				className: "rounded-2xl border border-white/10 bg-[#121216] overflow-hidden",
@@ -54583,7 +53513,11 @@ function HomeView({ profile, isSignedIn, isEmailVerified: _isEmailVerified, tour
 								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
 									className: "text-sm text-zinc-400 leading-relaxed",
 									children: [
-										"100% free community tournament on ",
+										getTournamentEntryFee(featured) > 0 ? `Entry Fee: ${formatEntryFeeLabel(getTournamentEntryFee(featured))}` : "FREE entry",
+										" ",
+										"· Prize Pool: +",
+										featured.coinReward.toLocaleString(),
+										" Coins on ",
 										featured.mapName,
 										". Room ID and password unlock automatically for verified participants before match start."
 									]
@@ -54674,7 +53608,7 @@ function HomeView({ profile, isSignedIn, isEmailVerified: _isEmailVerified, tour
 						children: todayTournaments.length > 0 ? "Today's & Upcoming Matches" : "Upcoming Tournaments"
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 						className: "text-xs text-zinc-400",
-						children: "Battle Royale, Clash Squad, and Lone Wolf community brackets — always free entry"
+						children: "Battle Royale, Clash Squad, Lone Wolf, and Custom brackets — free & entry-fee tournaments"
 					})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 						type: "button",
 						onClick: () => onNavigateTab("matches"),
@@ -54815,12 +53749,48 @@ function HomeView({ profile, isSignedIn, isEmailVerified: _isEmailVerified, tour
 					}, res.id))
 				})]
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AdMobBannerSlot, {
-				settings: adminSettings,
-				screen: "home",
-				placementLabel: "Home Feed Footer",
-				consentAccepted,
-				onAcceptConsent
+			!supportBannerDismissed && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("aside", {
+				"aria-label": "Customer Support Available 24/7",
+				className: "fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-40 w-[calc(100vw-2rem)] max-w-[310px] rounded-xl border border-sky-500/40 bg-[#121216]/95 backdrop-blur-md p-3.5 shadow-2xl",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex items-start justify-between gap-2.5",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flex items-start gap-2.5 min-w-0",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "w-9 h-9 rounded-lg bg-sky-500/15 border border-sky-500/35 flex items-center justify-center shrink-0",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MessageCircle, { className: "w-4 h-4 text-sky-400" })
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "min-w-0",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								className: "text-xs font-bold text-white leading-tight",
+								children: "Customer Support Available 24/7"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								className: "text-[11px] text-zinc-400 mt-0.5 truncate",
+								children: supportInfo.configured ? `${supportInfo.label} · ${supportInfo.displayHandle}` : "Direct Telegram help for all issues"
+							})]
+						})]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						onClick: () => setSupportBannerDismissed(true),
+						"aria-label": "Dismiss support banner",
+						className: "p-1 rounded-md text-zinc-400 hover:text-white hover:bg-white/10 shrink-0",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { className: "w-3.5 h-3.5" })
+					})]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "mt-2.5",
+					children: supportInfo.configured ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("a", {
+						href: supportInfo.url,
+						target: "_blank",
+						rel: "noopener noreferrer",
+						className: "w-full min-h-[38px] px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-xs font-bold text-slate-950 inline-flex items-center justify-center gap-1.5 transition-colors",
+						children: ["Chat on Telegram", /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExternalLink, { className: "w-3.5 h-3.5" })]
+					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						onClick: () => onToast("Telegram support link is being connected by the admin. Please check back shortly."),
+						className: "w-full min-h-[38px] px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 text-xs font-semibold text-sky-300 inline-flex items-center justify-center gap-1.5 transition-colors",
+						children: "Open Customer Support"
+					})
+				})]
 			})
 		]
 	});
@@ -54938,7 +53908,7 @@ function validateResultStandings(standings) {
 	};
 }
 // src/components/MatchesView.tsx
-function MatchesView({ tournaments, results, userRegistrations, profile, isSignedIn, registeredTournamentIds, adminSettings, onSelectTournament, onNavigateResults, onOpenAuth }) {
+function MatchesView({ tournaments, results, userRegistrations, profile, isSignedIn, registeredTournamentIds, onSelectTournament, onNavigateResults, onOpenAuth }) {
 	const [viewMode, setViewMode] = (0, import_react.useState)("all");
 	const [category, setCategory] = (0, import_react.useState)("All");
 	const [mode, setMode] = (0, import_react.useState)("All");
@@ -54961,26 +53931,15 @@ function MatchesView({ tournaments, results, userRegistrations, profile, isSigne
 		profile?.freeFireIgn
 	]);
 	const activeMyCount = (0, import_react.useMemo)(() => myMatches.filter((m) => m.statusCategory !== "cancelled").length, [myMatches]);
-	const availableModes = (0, import_react.useMemo)(() => {
-		if (category === "All") return [
-			"Solo",
-			"Duo",
-			"Squad",
-			"CS 1v1",
-			"CS 2v2",
-			"CS 4v4",
-			"Lone Wolf 1v1",
-			"Lone Wolf 2v2"
-		];
-		return CATEGORIES_WITH_MODES[category];
-	}, [category]);
+	const availableModes = (0, import_react.useMemo)(() => getModesForMatchesFilter(category, tournaments), [category, tournaments]);
+	const customTournaments = (0, import_react.useMemo)(() => tournaments.filter((t) => t.category === "Custom"), [tournaments]);
 	const filtered = (0, import_react.useMemo)(() => {
 		const q = search.trim().toLowerCase();
 		return tournaments.filter((t) => {
 			if (category !== "All" && t.category !== category) return false;
 			if (mode !== "All" && t.mode !== mode) return false;
 			if (statusFilter !== "all" && t.status !== statusFilter) return false;
-			if (q && !t.title.toLowerCase().includes(q) && !t.mapName.toLowerCase().includes(q)) return false;
+			if (q && !t.title.toLowerCase().includes(q) && !t.mapName.toLowerCase().includes(q) && !t.mode.toLowerCase().includes(q)) return false;
 			return true;
 		});
 	}, [
@@ -55000,7 +53959,7 @@ function MatchesView({ tournaments, results, userRegistrations, profile, isSigne
 					children: "Community Tournaments"
 				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 					className: "text-sm text-zinc-400 mt-1",
-					children: "All modes are 100% free entry. Select a bracket to view rules, slots, and room credentials."
+					children: "Browse Battle Royale, Clash Squad, Lone Wolf, and Custom modes — view entry fees, prize pools, slots, and room credentials."
 				})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					className: "relative w-full md:w-72",
 					children: [
@@ -55081,7 +54040,7 @@ function MatchesView({ tournaments, results, userRegistrations, profile, isSigne
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "text-xs text-zinc-400 max-w-md mx-auto",
-							children: "Join any free tournament bracket to track your slot, room ID, and verified match results here."
+							children: "Join any tournament bracket to track your slot, room ID, and verified match results here."
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 							type: "button",
@@ -55211,102 +54170,148 @@ function MatchesView({ tournaments, results, userRegistrations, profile, isSigne
 						}, registration.id);
 					})
 				})
-			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "space-y-3",
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "flex flex-wrap items-center gap-2",
-						role: "group",
-						"aria-label": "Filter by game category",
-						children: [
-							"All",
-							"Battle Royale",
-							"Clash Squad",
-							"Lone Wolf"
-						].map((cat) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "space-y-3",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "flex flex-wrap items-center gap-2",
+							role: "group",
+							"aria-label": "Filter by game category",
+							children: [
+								"All",
+								"Battle Royale",
+								"Clash Squad",
+								"Lone Wolf",
+								"Custom"
+							].map((cat) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								onClick: () => {
+									setCategory(cat);
+									setMode("All");
+								},
+								className: `min-h-[40px] px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${category === cat ? "bg-[#E11D48] text-white" : "bg-[#121216] text-zinc-300 border border-white/10 hover:text-white"}`,
+								children: cat === "All" ? "All Categories" : cat
+							}, cat))
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "flex flex-wrap items-center gap-2",
+							role: "group",
+							"aria-label": "Filter by mode",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								onClick: () => setMode("All"),
+								className: `min-h-[36px] px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${mode === "All" ? "bg-white text-black" : "bg-[#121216] text-zinc-400 border border-white/10 hover:text-white"}`,
+								children: "All Modes"
+							}), availableModes.map((m) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								onClick: () => setMode(m),
+								className: `min-h-[36px] px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${mode === m ? "bg-white text-black" : "bg-[#121216] text-zinc-400 border border-white/10 hover:text-white"}`,
+								children: m
+							}, m))]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "flex flex-wrap items-center gap-2",
+							role: "group",
+							"aria-label": "Filter by match status",
+							children: [
+								"all",
+								"live",
+								"upcoming",
+								"completed"
+							].map((st) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								onClick: () => setStatusFilter(st),
+								className: `min-h-[36px] px-3 py-1.5 rounded-md text-xs font-medium capitalize whitespace-nowrap shrink-0 transition-colors ${statusFilter === st ? "bg-zinc-800 text-white border border-white/20" : "text-zinc-400 hover:text-white"}`,
+								children: st === "all" ? "Any Status" : st
+							}, st))
+						})
+					]
+				}),
+				customTournaments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+					"aria-label": "Custom Modes Created by Admin",
+					className: "rounded-xl border border-white/10 bg-[#121216] p-4 space-y-2.5",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flex items-center justify-between gap-2",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
+							className: "text-xs font-semibold text-white",
+							children: [
+								"Custom Modes (",
+								customTournaments.length,
+								")"
+							]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "text-[11px] text-zinc-400",
+							children: "Admin-created custom brackets"
+						})]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "flex flex-wrap gap-2",
+						children: customTournaments.map((ct) => {
+							const feeText = formatEntryFeeLabel(getTournamentEntryFee(ct), true);
+							return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								type: "button",
+								onClick: () => onSelectTournament(ct),
+								className: "rounded-lg border border-white/10 bg-[#09090B] hover:border-[#E11D48]/60 px-3 py-2 text-left text-xs transition-colors",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+									className: "font-semibold text-white",
+									children: [
+										ct.mode,
+										" ",
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+											className: "text-zinc-400 font-normal",
+											children: ["· ", ct.title]
+										})
+									]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+									className: "text-[11px] text-amber-300 tabular-nums mt-0.5",
+									children: [
+										feeText === "FREE" ? "FREE Entry" : `Entry: ${feeText}`,
+										" · Prize +",
+										ct.coinReward.toLocaleString(),
+										" Coins"
+									]
+								})]
+							}, ct.id);
+						})
+					})]
+				}),
+				filtered.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "rounded-xl border border-white/10 bg-[#121216] p-10 text-center space-y-3",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: "text-base font-semibold text-white",
+							children: "No matching tournaments found"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: "text-xs text-zinc-400",
+							children: "Adjust your mode or status filters to view open community matches."
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 							type: "button",
 							onClick: () => {
-								setCategory(cat);
+								setCategory("All");
 								setMode("All");
+								setStatusFilter("all");
+								setSearch("");
 							},
-							className: `min-h-[40px] px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${category === cat ? "bg-[#E11D48] text-white" : "bg-[#121216] text-zinc-300 border border-white/10 hover:text-white"}`,
-							children: cat === "All" ? "All Categories" : cat
-						}, cat))
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "flex flex-wrap items-center gap-2",
-						role: "group",
-						"aria-label": "Filter by mode",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							onClick: () => setMode("All"),
-							className: `min-h-[36px] px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${mode === "All" ? "bg-white text-black" : "bg-[#121216] text-zinc-400 border border-white/10 hover:text-white"}`,
-							children: "All Modes"
-						}), availableModes.map((m) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							onClick: () => setMode(m),
-							className: `min-h-[36px] px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${mode === m ? "bg-white text-black" : "bg-[#121216] text-zinc-400 border border-white/10 hover:text-white"}`,
-							children: m
-						}, m))]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "flex flex-wrap items-center gap-2",
-						role: "group",
-						"aria-label": "Filter by match status",
-						children: [
-							"all",
-							"live",
-							"upcoming",
-							"completed"
-						].map((st) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							onClick: () => setStatusFilter(st),
-							className: `min-h-[36px] px-3 py-1.5 rounded-md text-xs font-medium capitalize whitespace-nowrap shrink-0 transition-colors ${statusFilter === st ? "bg-zinc-800 text-white border border-white/20" : "text-zinc-400 hover:text-white"}`,
-							children: st === "all" ? "Any Status" : st
-						}, st))
-					})
-				]
-			}), filtered.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "rounded-xl border border-white/10 bg-[#121216] p-10 text-center space-y-3",
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-						className: "text-base font-semibold text-white",
-						children: "No matching tournaments found"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-						className: "text-xs text-zinc-400",
-						children: "Adjust your mode or status filters to view open community matches."
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-						type: "button",
-						onClick: () => {
-							setCategory("All");
-							setMode("All");
-							setStatusFilter("all");
-							setSearch("");
-						},
-						className: "min-h-[44px] px-5 py-2 rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] text-xs font-semibold text-white",
-						children: "Reset Filters"
-					})
-				]
-			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-				className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5",
-				children: filtered.map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TournamentCard, {
-					tournament: t,
-					isRegistered: registeredTournamentIds.has(t.id),
-					onSelect: onSelectTournament
-				}, t.id))
-			})] }),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AdMobBannerSlot, {
-				settings: adminSettings,
-				screen: "matches",
-				placementLabel: "Tournament Directory Footer"
-			})
+							className: "min-h-[44px] px-5 py-2 rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] text-xs font-semibold text-white",
+							children: "Reset Filters"
+						})
+					]
+				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5",
+					children: filtered.map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TournamentCard, {
+						tournament: t,
+						isRegistered: registeredTournamentIds.has(t.id),
+						onSelect: onSelectTournament
+					}, t.id))
+				})
+			] })
 		]
 	});
 }
 // src/components/ResultsView.tsx
-function ResultsView({ results, tournaments, registrations, profile, currentUserId, adminSettings, onSelectTournament, onOpenAuth }) {
+function ResultsView({ results, tournaments, registrations, profile, currentUserId, onSelectTournament, onOpenAuth }) {
 	const [scope, setScope] = (0, import_react.useState)("all");
 	const [category, setCategory] = (0, import_react.useState)("All");
 	const [search, setSearch] = (0, import_react.useState)("");
@@ -55422,7 +54427,8 @@ function ResultsView({ results, tournaments, registrations, profile, currentUser
 						"All",
 						"Battle Royale",
 						"Clash Squad",
-						"Lone Wolf"
+						"Lone Wolf",
+						"Custom"
 					].map((cat) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 						type: "button",
 						onClick: () => setCategory(cat),
@@ -55672,17 +54678,12 @@ function ResultsView({ results, tournaments, registrations, profile, currentUser
 						})]
 					}, res.id);
 				})
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AdMobBannerSlot, {
-				settings: adminSettings,
-				screen: "results",
-				placementLabel: "Results Page Footer"
 			})
 		]
 	});
 }
 // src/components/LeaderboardView.tsx
-function LeaderboardView({ entries, results, currentUserId, adminSettings, onNavigateResults }) {
+function LeaderboardView({ entries, results, currentUserId, onNavigateResults }) {
 	const [scope, setScope] = (0, import_react.useState)("global");
 	const sorted = (0, import_react.useMemo)(() => sortLeaderboard(entries, scope), [entries, scope]);
 	const myRank = currentUserId ? getPlayerLeaderboardRank(entries, currentUserId, scope) : null;
@@ -55879,11 +54880,6 @@ function LeaderboardView({ entries, results, currentUserId, adminSettings, onNav
 						]
 					}, res.id))
 				})]
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AdMobBannerSlot, {
-				settings: adminSettings,
-				screen: "leaderboard",
-				placementLabel: "Leaderboard Footer"
 			})
 		]
 	});
@@ -55970,231 +54966,9 @@ function formatWithdrawalTimestamp(iso) {
 		minute: "2-digit"
 	});
 }
-// src/components/ConsentManagementModal.tsx
-function ConsentManagementModal({ open, consentAccepted, onUpdateConsent, onClose, onToast }) {
-	const [openingUmp, setOpeningUmp] = (0, import_react.useState)(false);
-	const [statusNotice, setStatusNotice] = (0, import_react.useState)(null);
-	(0, import_react.useEffect)(() => {
-		if (!open) {
-			setStatusNotice(null);
-			return;
-		}
-		const handleKeyDown = (e) => {
-			if (e.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", handleKeyDown);
-		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [open, onClose]);
-	if (!open) return null;
-	const isNative = Capacitor.isNativePlatform();
-	const optedOut = !consentAccepted;
-	const summary = getAdConsentSummary(consentAccepted);
-	const handleToggleOptOut = () => {
-		const nextOptedOut = !optedOut;
-		onUpdateConsent(!nextOptedOut);
-		const msg = nextOptedOut ? "Opted out globally — only non-personalized ads will be requested." : "Personalized ad consent saved globally.";
-		setStatusNotice(msg);
-		onToast?.(msg);
-	};
-	const handleOpenNativeUmp = async () => {
-		setOpeningUmp(true);
-		try {
-			if (await openAdPrivacyOptions() === "native_opened") {
-				const msg = "Google UMP privacy options updated.";
-				setStatusNotice(msg);
-				onToast?.(msg);
-			}
-		} finally {
-			setOpeningUmp(false);
-		}
-	};
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-		className: "fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4",
-		role: "dialog",
-		"aria-modal": "true",
-		"aria-labelledby": "gdpr-consent-modal-title",
-		onClick: (e) => {
-			if (e.target === e.currentTarget) onClose();
-		},
-		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: "w-full max-w-xl max-h-[90vh] flex flex-col rounded-2xl border border-white/10 bg-[#121216] shadow-2xl overflow-hidden",
-			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "flex items-start justify-between gap-4 px-5 sm:px-6 py-4 border-b border-white/10 shrink-0",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "space-y-1",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
-							id: "gdpr-consent-modal-title",
-							className: "font-display text-2xl font-extrabold text-white flex items-center gap-2",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { className: "w-5 h-5 text-[#E11D48]" }), "GDPR Consent & Ad Privacy"]
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-							className: "text-xs text-zinc-400",
-							children: "Control ad personalization across SPIDER ESPORTS. Your choice applies globally."
-						})]
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-						type: "button",
-						onClick: onClose,
-						"aria-label": "Close ad privacy consent modal",
-						className: "min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg border border-white/10 text-zinc-300 hover:text-white hover:bg-white/5 shrink-0",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { className: "w-5 h-5" })
-					})]
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "flex-1 overflow-y-auto px-5 sm:px-6 py-5 space-y-4",
-					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							"data-testid": "consent-status-banner",
-							className: `rounded-xl border p-4 space-y-1.5 ${optedOut ? "border-emerald-500/35 bg-emerald-950/15" : "border-amber-500/30 bg-amber-950/15"}`,
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "flex items-center justify-between gap-2",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "text-xs font-semibold text-white",
-									children: summary.modeHeadline
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: `text-[11px] font-semibold px-2 py-0.5 rounded border ${optedOut ? "border-emerald-500/35 bg-emerald-500/15 text-emerald-300" : "border-amber-500/35 bg-amber-500/15 text-amber-300"}`,
-									children: summary.shortLabel
-								})]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-								className: "text-xs text-zinc-300 leading-relaxed",
-								children: summary.modeDescription
-							})]
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "rounded-xl border border-white/15 bg-[#09090B] p-4 flex items-center justify-between gap-4",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "space-y-1",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
-									htmlFor: "gdpr-opt-out-switch",
-									className: "text-sm font-semibold text-white block cursor-pointer",
-									children: "Opt out of personalized ads"
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-									className: "text-xs text-zinc-400 leading-relaxed",
-									children: [
-										"Turn ON to opt out of behavioral ad targeting and restrict Google AdMob requests to non-personalized contextual ads (",
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "font-mono-tabular text-zinc-300",
-											children: "npa=1"
-										}),
-										")."
-									]
-								})]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-								id: "gdpr-opt-out-switch",
-								type: "button",
-								role: "switch",
-								"aria-checked": optedOut,
-								"aria-label": "Opt out of personalized ads",
-								"data-testid": "gdpr-opt-out-toggle",
-								onClick: handleToggleOptOut,
-								className: `relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#E11D48] ${optedOut ? "border-emerald-400/50 bg-emerald-500" : "border-white/20 bg-zinc-700"}`,
-								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${optedOut ? "translate-x-6" : "translate-x-1"}` })
-							})]
-						}),
-						statusNotice && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							role: "status",
-							className: "rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-200 flex items-center gap-2",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleCheck, { className: "w-4 h-4 text-emerald-400 shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: statusNotice })]
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "rounded-xl border border-white/10 bg-[#09090B] p-4 space-y-3 text-xs text-zinc-300 leading-relaxed",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h3", {
-								className: "text-sm font-semibold text-white flex items-center gap-2",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Info, { className: "w-4 h-4 text-[#E11D48] shrink-0" }), "How Ad Personalization & GDPR Consent Work"]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "space-y-2.5",
-								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-										className: "font-semibold text-zinc-100",
-										children: "1. Personalized Ads (When Opt-Out is OFF)"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-										className: "text-zinc-400 mt-0.5",
-										children: "With your consent, Google AdMob and its mediation partners may access your device Advertising ID, approximate region, and in-app interaction signals to tailor ads to your interests."
-									})] }),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-										className: "font-semibold text-zinc-100",
-										children: "2. Non-Personalized Ads (When Opt-Out is ON)"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-										className: "text-zinc-400 mt-0.5",
-										children: [
-											"When you opt out, SPIDER ESPORTS sends the non-personalized flag (",
-											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-												className: "font-mono-tabular text-zinc-300",
-												children: "npa=1"
-											}),
-											") on every Android AdMob request and pauses personalized cookies/profiling signals. Ads rely strictly on coarse contextual information (such as app category and current screen)."
-										]
-									})] }),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-										className: "font-semibold text-zinc-100",
-										children: "3. Your GDPR & Privacy Rights"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-										className: "text-zinc-400 mt-0.5",
-										children: [
-											"Under GDPR (EEA/UK) and applicable data protection laws, consent is optional and may be withdrawn at any time from your Profile. Opting out never blocks free tournament entry, match slots, or Spider Coin withdrawals. Preference is saved globally under ",
-											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-												className: "font-mono-tabular text-zinc-300",
-												children: SPIDER_AD_CONSENT_STORAGE_KEY
-											}),
-											"."
-										]
-									})] })
-								]
-							})]
-						}),
-						isNative && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "rounded-xl border border-white/10 bg-[#09090B] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "space-y-0.5",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-									className: "text-xs font-semibold text-white flex items-center gap-1.5",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SlidersHorizontal, { className: "w-3.5 h-3.5 text-[#E11D48]" }), "Google UMP Regional Consent Form"]
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-									className: "text-[11px] text-zinc-400",
-									children: "Manage vendor-level EEA/UK IAB TCF choices directly inside Google UMP."
-								})]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-								type: "button",
-								disabled: openingUmp,
-								onClick: () => void handleOpenNativeUmp(),
-								className: "min-h-[38px] px-3.5 py-1.5 rounded-lg border border-white/15 bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-white shrink-0",
-								children: openingUmp ? "Opening UMP..." : "Manage UMP Vendors"
-							})]
-						})
-					]
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 sm:px-6 py-3.5 border-t border-white/10 bg-[#09090B]/60 shrink-0",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-						className: "text-[11px] text-zinc-400 inline-flex items-center gap-1.5",
-						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Lock, { className: "w-3.5 h-3.5 text-zinc-500 shrink-0" }),
-							"Saved globally as ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								className: "font-mono-tabular text-zinc-300",
-								children: consentAccepted ? "1 (Personalized)" : "0 (Opted Out)"
-							})
-						]
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "flex items-center gap-2 shrink-0",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							onClick: handleToggleOptOut,
-							className: "min-h-[40px] px-3.5 py-1.5 rounded-lg border border-white/15 bg-zinc-900 hover:bg-zinc-800 text-xs font-semibold text-zinc-200",
-							children: optedOut ? "Switch to Personalized" : "Opt Out Now"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							onClick: onClose,
-							className: "min-h-[40px] px-5 py-1.5 rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] text-xs font-semibold text-white",
-							children: "Done"
-						})]
-					})]
-				})
-			]
-		})
-	});
-}
 // src/components/WithdrawalHistoryModal.tsx
-function WithdrawalHistoryModal({ open, withdrawals, availableCoins, initialFilter = "all", onClose, onToast }) {
+function WithdrawalHistoryModal({ open, withdrawals, availableCoins, winningCoins, initialFilter = "all", onClose, onToast }) {
+	const redeemableWinningCoins = typeof winningCoins === "number" ? Math.max(0, Math.min(availableCoins, winningCoins)) : availableCoins;
 	const [statusFilter, setStatusFilter] = (0, import_react.useState)(initialFilter);
 	const [copiedId, setCopiedId] = (0, import_react.useState)(null);
 	(0, import_react.useEffect)(() => {
@@ -56263,7 +55037,7 @@ function WithdrawalHistoryModal({ open, withdrawals, availableCoins, initialFilt
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Wallet, { className: "w-5 h-5 text-amber-400" }), "Withdrawal History"]
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "text-xs text-zinc-400",
-							children: "Detailed status of your Spider Coin redemption requests (100 Coins = ₹10)."
+							children: "Detailed status of your winning-prize redemption requests (1 Coin = ₹1 · Min ₹50)."
 						})]
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "flex items-center gap-2 shrink-0",
@@ -56271,13 +55045,13 @@ function WithdrawalHistoryModal({ open, withdrawals, availableCoins, initialFilt
 							className: "hidden sm:block text-right rounded-lg border border-white/10 bg-[#09090B] px-3 py-1.5 tabular-nums",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 								className: "text-[10px] uppercase tracking-wider text-zinc-400",
-								children: "Wallet Balance"
+								children: "Winning Prize (Redeemable)"
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
 								className: "text-xs font-bold text-amber-400",
 								children: [
-									availableCoins.toLocaleString(),
+									redeemableWinningCoins.toLocaleString(),
 									" Coins (",
-									formatRupees(calculateRupeesFromCoins(availableCoins)),
+									formatRupees(calculateRupeesFromCoins(redeemableWinningCoins)),
 									")"
 								]
 							})]
@@ -56391,7 +55165,7 @@ function WithdrawalHistoryModal({ open, withdrawals, availableCoins, initialFilt
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 								className: "text-xs text-zinc-400 max-w-md mx-auto",
-								children: "Earn at least 100 Spider Coins (₹10) from free Fire tournaments, then submit a UPI or Bank payout request from your Profile wallet."
+								children: "Win at least 50 Spider Coins (₹50) in tournaments in your SPIDER ESPORTS wallet, then submit a UPI or Bank payout request from your Profile wallet."
 							})
 						]
 					}) : visibleWithdrawals.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -56536,7 +55310,7 @@ function WithdrawalHistoryModal({ open, withdrawals, availableCoins, initialFilt
 	});
 }
 // src/components/ProfileView.tsx
-function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInProvider, registrations, withdrawals, tournaments, results, leaderboard, adminSettings, consentAccepted = false, onUpdateConsent, onOpenAuth, onNavigateResults, onSelectTournament, onToast, onRefreshVerification }) {
+function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInProvider, registrations, withdrawals, deposits = [], tournaments, results, leaderboard, adminSettings, onOpenAuth, onNavigateResults, onSelectTournament, onToast, onRefreshVerification }) {
 	const [ignEdit, setIgnEdit] = (0, import_react.useState)(profile?.freeFireIgn || "");
 	const [uidEdit, setUidEdit] = (0, import_react.useState)(profile?.freeFireUid || "");
 	const [editingIdentity, setEditingIdentity] = (0, import_react.useState)(false);
@@ -56548,16 +55322,23 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 	const [appPasswordConfirm, setAppPasswordConfirm] = (0, import_react.useState)("");
 	const [passwordError, setPasswordError] = (0, import_react.useState)(null);
 	const [savingPassword, setSavingPassword] = (0, import_react.useState)(false);
-	const [watchingRewardAd, setWatchingRewardAd] = (0, import_react.useState)(false);
-	const [rewardAdError, setRewardAdError] = (0, import_react.useState)(null);
-	const [withdrawCoins, setWithdrawCoins] = (0, import_react.useState)(100);
+	const [walletTab, setWalletTab] = (0, import_react.useState)("withdraw");
+	const [depositRupees, setDepositRupees] = (0, import_react.useState)(100);
+	const [depositUtr, setDepositUtr] = (0, import_react.useState)("");
+	const [depositPayerUpi, setDepositPayerUpi] = (0, import_react.useState)("");
+	const [depositScreenshotUrl, setDepositScreenshotUrl] = (0, import_react.useState)("");
+	const [uploadingScreenshot, setUploadingScreenshot] = (0, import_react.useState)(false);
+	const [depositError, setDepositError] = (0, import_react.useState)(null);
+	const [depositSuccess, setDepositSuccess] = (0, import_react.useState)(null);
+	const [submittingDeposit, setSubmittingDeposit] = (0, import_react.useState)(false);
+	const [copiedUpi, setCopiedUpi] = (0, import_react.useState)(false);
+	const [withdrawCoins, setWithdrawCoins] = (0, import_react.useState)(50);
 	const [withdrawMethod, setWithdrawMethod] = (0, import_react.useState)("upi");
 	const [withdrawDest, setWithdrawDest] = (0, import_react.useState)("");
 	const [withdrawError, setWithdrawError] = (0, import_react.useState)(null);
 	const [submittingWithdraw, setSubmittingWithdraw] = (0, import_react.useState)(false);
 	const [historyModalOpen, setHistoryModalOpen] = (0, import_react.useState)(false);
 	const [historyFilter, setHistoryFilter] = (0, import_react.useState)("all");
-	const [consentModalOpen, setConsentModalOpen] = (0, import_react.useState)(false);
 	const openHistoryModal = (filter = "all") => {
 		setHistoryFilter(filter);
 		setHistoryModalOpen(true);
@@ -56574,8 +55355,10 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 	});
 	const rank = profile ? getPlayerLeaderboardRank(leaderboard, profile.uid, "global") : null;
 	const userCoins = profile?.coins ?? 0;
-	const walletRupees = calculateRupeesFromCoins(userCoins);
-	const thresholdPercent = Math.min(100, Math.round(userCoins / 100 * 100));
+	const winningCoins = getRedeemableWinningCoins(profile);
+	const addedNonRedeemableCoins = getNonRedeemableCoins(profile);
+	const winningRupees = calculateRupeesFromCoins(winningCoins);
+	const thresholdPercent = Math.min(100, Math.round(winningCoins / 50 * 100));
 	const previewPayout = calculateRupeesFromCoins(Number.isFinite(withdrawCoins) ? withdrawCoins : 0);
 	const themeAccentClass = profile?.activeTheme === "crimson-grid" ? "border-[#E11D48]/60" : profile?.activeTheme === "arachnid-gold" ? "border-amber-500/60" : profile?.activeTheme === "stealth-carbon" ? "border-zinc-500/60" : "border-white/10";
 	const handleSaveIdentity = async (e) => {
@@ -56649,37 +55432,66 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 			onToast(err instanceof Error ? err.message : "Unable to equip cosmetic.");
 		}
 	};
-	const handleWatchRewardedAd = async (cosmeticId) => {
-		if (!profile) return;
-		setRewardAdError(null);
-		if (!isEmailVerified) {
-			const msg = "Verify your email address first before unlocking cosmetics.";
-			setRewardAdError(msg);
-			onToast(msg);
-			return;
-		}
-		if (profile.unlockedCosmetics?.includes(cosmeticId)) {
-			onToast("Arena Supporter emblem is already unlocked on your profile.");
-			return;
-		}
-		setWatchingRewardAd(true);
+	const hasPaymentQrConfigured = Boolean(adminSettings.paymentQrDataUrl?.trim());
+	const handleDepositScreenshotUpload = async (e) => {
+		const file = e.target.files?.[0];
+		e.target.value = "";
+		if (!file) return;
+		setDepositError(null);
+		setUploadingScreenshot(true);
 		try {
-			const res = await showRewardedAdForCosmetic(adminSettings, consentAccepted);
-			if (res.outcome === "rewarded") onToast((await unlockRewardedAdCosmetic({
-				profile,
-				cosmeticId
-			})).alreadyUnlocked ? "Arena Supporter emblem was already unlocked." : "Ad completed! Arena Supporter cosmetic emblem unlocked & equipped (0 Coins).");
-			else {
-				const msg = res.error || "Rewarded ad did not complete. Cosmetic remains locked (0 rewards granted).";
-				setRewardAdError(msg);
-				onToast(msg);
-			}
+			const result = await compressImageFileToDataUrl(file);
+			setDepositScreenshotUrl(result.dataUrl);
+			onToast(`Payment receipt attached (~${result.approxKb} KB).`);
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : "Unable to unlock cosmetic via rewarded ad.";
-			setRewardAdError(msg);
+			const msg = err instanceof Error ? err.message : "Unable to attach payment screenshot.";
+			setDepositError(msg);
 			onToast(msg);
 		} finally {
-			setWatchingRewardAd(false);
+			setUploadingScreenshot(false);
+		}
+	};
+	const handleCopyAdminUpi = () => {
+		const upi = adminSettings.paymentUpiId?.trim();
+		if (!upi) return;
+		navigator.clipboard?.writeText(upi).then(() => {
+			setCopiedUpi(true);
+			onToast(`Copied UPI ID: ${upi}`);
+			window.setTimeout(() => setCopiedUpi(false), 2e3);
+		});
+	};
+	const handleSubmitDeposit = async (e) => {
+		e.preventDefault();
+		if (!profile) return;
+		setDepositError(null);
+		setDepositSuccess(null);
+		if (!isEmailVerified) {
+			setDepositError("Please verify your email address before adding Spider Coins.");
+			return;
+		}
+		setSubmittingDeposit(true);
+		try {
+			const res = await verifyAndAddCoinsFromQrPayment({
+				profile,
+				amountRupees: Math.floor(Number(depositRupees)),
+				utr: depositUtr,
+				payerUpi: depositPayerUpi,
+				screenshotUrl: depositScreenshotUrl,
+				hasPaymentQrConfigured
+			});
+			setDepositUtr("");
+			setDepositPayerUpi("");
+			setDepositScreenshotUrl("");
+			setDepositRupees(100);
+			const msg = `Verified UTR ${res.utr}! +${res.coinsAdded.toLocaleString()} Spider Coins added to your wallet (Balance: ${res.nextBalance.toLocaleString()}).`;
+			setDepositSuccess(msg);
+			onToast(msg);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : "Unable to verify payment & add coins.";
+			setDepositError(msg);
+			onToast(msg);
+		} finally {
+			setSubmittingDeposit(false);
 		}
 	};
 	const handleSubmitWithdrawal = async (e) => {
@@ -56693,6 +55505,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 		const validation = validateWithdrawalRequest({
 			amountCoins: Math.floor(Number(withdrawCoins)),
 			availableCoins: profile.coins,
+			availableWinningCoins: winningCoins,
 			method: withdrawMethod,
 			destination: withdrawDest
 		});
@@ -56702,12 +55515,6 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 		}
 		setSubmittingWithdraw(true);
 		try {
-			const gate = shouldProceedWithWithdrawalAfterRewardedAd((await showRewardedAdForWithdrawal(adminSettings, consentAccepted)).outcome);
-			if (!gate.proceed) {
-				setWithdrawError(gate.reason);
-				onToast(gate.reason);
-				return;
-			}
 			await requestCoinWithdrawal({
 				profile,
 				amountCoins: validation.coins,
@@ -56715,7 +55522,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 				destination: validation.destination
 			});
 			setWithdrawDest("");
-			setWithdrawCoins(100);
+			setWithdrawCoins(50);
 			onToast(`Withdrawal requested: ${formatRupees(validation.rupees)} (${validation.coins.toLocaleString()} coins).`);
 		} catch (err) {
 			setWithdrawError(err instanceof Error ? err.message : "Unable to submit withdrawal.");
@@ -56787,7 +55594,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 						className: "text-sm text-zinc-400 max-w-lg mx-auto",
-						children: "Register with your unique username and Free Fire UID to join free community tournaments, earn Spider Coins from playing, kills, and wins (100 Coins = ₹10), and climb the global ladder."
+						children: "Register with your unique username and Free Fire UID to join community tournaments, win Spider Coins (1 Coin = ₹1, only winning prizes redeemable, Min ₹50), and climb the global ladder."
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 						type: "button",
@@ -56964,14 +55771,19 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 									className: "font-semibold text-white inline-flex items-center gap-1.5",
 									children: [
 										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Coins, { className: "w-4 h-4 text-amber-400" }),
-										userCoins.toLocaleString(),
-										" Spider Coins (",
-										formatRupees(walletRupees),
-										")"
+										"Winning Prize: ",
+										winningCoins.toLocaleString(),
+										" Coins (",
+										formatRupees(winningRupees),
+										")",
+										addedNonRedeemableCoins > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+											className: "text-zinc-400 font-normal",
+											children: ["· Added (Non-Redeemable): ", addedNonRedeemableCoins.toLocaleString()]
+										})
 									]
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 									className: "text-zinc-400",
-									children: userCoins >= 100 ? "Withdrawal unlocked · 100 Coins = ₹10" : `${(100 - userCoins).toLocaleString()} more coins to unlock ₹10 withdrawal`
+									children: winningCoins >= 50 ? `Winning prize withdrawal unlocked · 1 Coin = ₹1` : `${(50 - winningCoins).toLocaleString()} more winning prize coins to unlock ₹50 withdrawal`
 								})]
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 								className: "h-2 w-full rounded-full bg-zinc-800 overflow-hidden",
@@ -57014,10 +55826,17 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 								})] }),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 									className: "text-zinc-400",
-									children: "Spider Coins"
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									children: "Winning / Total Coins"
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
 									className: "text-xl font-bold text-amber-400 mt-0.5",
-									children: userCoins.toLocaleString()
+									children: [
+										winningCoins.toLocaleString(),
+										" ",
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+											className: "text-xs font-medium text-zinc-400",
+											children: ["/ ", userCoins.toLocaleString()]
+										})
+									]
 								})] })
 							]
 						})
@@ -57025,135 +55844,431 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 					className: "grid grid-cols-1 lg:grid-cols-12 gap-6",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
-						onSubmit: handleSubmitWithdrawal,
-						className: "lg:col-span-6 rounded-xl border border-white/10 bg-[#121216] p-6 space-y-4",
-						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "flex items-start justify-between gap-3",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "lg:col-span-6 rounded-xl border border-white/10 bg-[#121216] p-6 space-y-5",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "flex flex-wrap items-center justify-between gap-3",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								role: "tablist",
+								"aria-label": "Wallet actions",
+								className: "inline-flex rounded-lg border border-white/10 bg-[#09090B] p-1 gap-1",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									role: "tab",
+									"aria-selected": walletTab === "withdraw",
+									onClick: () => setWalletTab("withdraw"),
+									className: `min-h-[38px] px-3.5 py-1.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${walletTab === "withdraw" ? "bg-[#E11D48] text-white" : "text-zinc-300 hover:text-white"}`,
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Wallet, { className: "w-3.5 h-3.5" }), "Withdraw Coins"]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									role: "tab",
+									"aria-selected": walletTab === "add",
+									onClick: () => setWalletTab("add"),
+									className: `min-h-[38px] px-3.5 py-1.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${walletTab === "add" ? "bg-[#E11D48] text-white" : "text-zinc-300 hover:text-white"}`,
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(QrCode, { className: "w-3.5 h-3.5" }), "Add Coins (QR)"]
+								})]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "text-right tabular-nums",
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+										className: "text-[11px] text-zinc-400",
+										children: "Redeemable Winning Prize"
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+										className: "text-base font-bold text-amber-400",
+										children: [
+											winningCoins.toLocaleString(),
+											" Coins (",
+											formatRupees(winningRupees),
+											")"
+										]
+									}),
+									addedNonRedeemableCoins > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+										className: "text-[11px] text-zinc-400",
+										children: [
+											"Total Wallet: ",
+											userCoins.toLocaleString(),
+											" (",
+											addedNonRedeemableCoins.toLocaleString(),
+											" added)"
+										]
+									})
+								]
+							})]
+						}), walletTab === "withdraw" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
+							onSubmit: handleSubmitWithdrawal,
+							className: "space-y-4",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
 									className: "font-display text-2xl font-bold text-white flex items-center gap-2",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Wallet, { className: "w-5 h-5 text-amber-400" }), "Withdraw Spider Coins"]
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Wallet, { className: "w-5 h-5 text-amber-400" }), "Withdraw Winning Prize"]
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
 									className: "text-xs text-zinc-400 mt-1",
 									children: [
-										"Rate: ",
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
+											className: "text-white",
+											children: "Only Winning Prize Coins"
+										}),
+										" earned from matches can be redeemed · Rate: ",
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
+											className: "text-white",
+											children: "1 Coin = ₹1"
+										}),
+										" · Min:",
+										" ",
 										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("strong", {
 											className: "text-white",
 											children: [
-												100 .toLocaleString(),
-												" Coins = ₹",
-												10
+												50,
+												" Winning Coins (₹",
+												50,
+												")"
 											]
 										}),
-										". Coins are earned through match play, verified kills, and tournament wins credited by admin."
+										"."
 									]
-								})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "text-right shrink-0 tabular-nums",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-										className: "text-[11px] text-zinc-400",
-										children: "Available"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-										className: "text-base font-bold text-amber-400",
-										children: userCoins.toLocaleString()
-									})]
-								})]
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-								className: "flex flex-wrap gap-2",
-								children: [
-									100,
-									250,
-									500
-								].map((preset) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-									type: "button",
-									disabled: userCoins < preset,
-									onClick: () => setWithdrawCoins(preset),
-									className: "min-h-[36px] px-3 py-1 rounded-lg border border-white/10 bg-[#09090B] hover:border-amber-400/50 disabled:opacity-40 text-xs font-medium text-zinc-200 tabular-nums",
+								})] }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "flex flex-wrap gap-2",
 									children: [
-										preset.toLocaleString(),
-										" Coins (",
-										formatRupees(calculateRupeesFromCoins(preset)),
-										")"
-									]
-								}, preset))
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "grid grid-cols-1 sm:grid-cols-2 gap-3",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
-									htmlFor: "wd-coins",
+										50,
+										100,
+										250,
+										500
+									].map((preset) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+										type: "button",
+										disabled: winningCoins < preset,
+										onClick: () => setWithdrawCoins(preset),
+										className: "min-h-[36px] px-3 py-1 rounded-lg border border-white/10 bg-[#09090B] hover:border-amber-400/50 disabled:opacity-40 text-xs font-medium text-zinc-200 tabular-nums",
+										children: [
+											preset.toLocaleString(),
+											" Coins (",
+											formatRupees(calculateRupeesFromCoins(preset)),
+											")"
+										]
+									}, preset))
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "grid grid-cols-1 sm:grid-cols-2 gap-3",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+										htmlFor: "wd-coins",
+										className: "block text-xs text-zinc-300 mb-1",
+										children: [
+											"Winning Coins to Withdraw (Min ",
+											50,
+											")"
+										]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+										id: "wd-coins",
+										type: "number",
+										min: 50,
+										max: Math.max(50, winningCoins),
+										step: 1,
+										required: true,
+										value: withdrawCoins,
+										onChange: (e) => setWithdrawCoins(Number(e.target.value)),
+										className: "w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
+									})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+										htmlFor: "wd-method",
+										className: "block text-xs text-zinc-300 mb-1",
+										children: "Payout Method"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
+										id: "wd-method",
+										value: withdrawMethod,
+										onChange: (e) => setWithdrawMethod(e.target.value),
+										className: "w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+											value: "upi",
+											children: "UPI ID (PhonePe / GPay / Paytm)"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+											value: "bank",
+											children: "Bank Transfer (Account + IFSC)"
+										})]
+									})] })]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+									htmlFor: "wd-dest",
 									className: "block text-xs text-zinc-300 mb-1",
-									children: "Coins to Withdraw (Min 100)"
+									children: withdrawMethod === "upi" ? "UPI ID" : "Bank Account Number & IFSC Code"
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-									id: "wd-coins",
-									type: "number",
-									min: 100,
-									max: Math.max(100, userCoins),
-									step: 1,
+									id: "wd-dest",
+									type: "text",
 									required: true,
-									value: withdrawCoins,
-									onChange: (e) => setWithdrawCoins(Number(e.target.value)),
-									className: "w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
-								})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
-									htmlFor: "wd-method",
-									className: "block text-xs text-zinc-300 mb-1",
-									children: "Payout Method"
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
-									id: "wd-method",
-									value: withdrawMethod,
-									onChange: (e) => setWithdrawMethod(e.target.value),
-									className: "w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-										value: "upi",
-										children: "UPI ID (PhonePe / GPay / Paytm)"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-										value: "bank",
-										children: "Bank Transfer (Account + IFSC)"
+									value: withdrawDest,
+									onChange: (e) => setWithdrawDest(e.target.value),
+									placeholder: withdrawMethod === "upi" ? "e.g. playername@okaxis" : "e.g. 123456789012 · SBIN0001234",
+									className: "w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
+								})] }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "rounded-lg bg-[#09090B] border border-white/10 px-4 py-3 flex items-center justify-between text-xs tabular-nums",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "text-zinc-400",
+										children: "Estimated Payout"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "text-base font-bold text-emerald-400 inline-flex items-center gap-1",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(IndianRupee, { className: "w-4 h-4" }), formatRupees(previewPayout).replace("₹", "")]
 									})]
-								})] })]
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
-								htmlFor: "wd-dest",
-								className: "block text-xs text-zinc-300 mb-1",
-								children: withdrawMethod === "upi" ? "UPI ID" : "Bank Account Number & IFSC Code"
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-								id: "wd-dest",
-								type: "text",
-								required: true,
-								value: withdrawDest,
-								onChange: (e) => setWithdrawDest(e.target.value),
-								placeholder: withdrawMethod === "upi" ? "e.g. playername@okaxis" : "e.g. 123456789012 · SBIN0001234",
-								className: "w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
-							})] }),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "rounded-lg bg-[#09090B] border border-white/10 px-4 py-3 flex items-center justify-between text-xs tabular-nums",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "text-zinc-400",
-									children: "Estimated Payout"
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-									className: "text-base font-bold text-emerald-400 inline-flex items-center gap-1",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(IndianRupee, { className: "w-4 h-4" }), formatRupees(previewPayout).replace("₹", "")]
-								})]
-							}),
-							withdrawError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-								role: "alert",
-								className: "text-xs text-[#F43F5E] font-medium",
-								children: withdrawError
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-								type: "submit",
-								disabled: submittingWithdraw || userCoins < 100 || profile.suspended,
-								className: "w-full min-h-[46px] rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] disabled:opacity-45 disabled:cursor-not-allowed text-xs font-semibold text-white transition-colors",
-								children: submittingWithdraw ? "Processing Request..." : userCoins < 100 ? `Need ${100 .toLocaleString()} Coins (₹10) to Withdraw` : `Request ${formatRupees(previewPayout)} Withdrawal`
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-								className: "text-[11px] text-zinc-400",
-								children: "Android APK plays a rewarded ad when submitting a withdrawal request; payouts always submit safely if no ad is available."
-							})
-						]
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								}),
+								withdrawError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									role: "alert",
+									className: "text-xs text-[#F43F5E] font-medium",
+									children: withdrawError
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "submit",
+									disabled: submittingWithdraw || winningCoins < 50 || profile.suspended,
+									className: "w-full min-h-[46px] rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] disabled:opacity-45 disabled:cursor-not-allowed text-xs font-semibold text-white transition-colors",
+									children: submittingWithdraw ? "Processing Request..." : winningCoins < 50 ? `Need ${50 .toLocaleString()} Winning Coins (₹50) to Withdraw` : `Redeem ${formatRupees(previewPayout)} Winning Prize`
+								})
+							]
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
+							onSubmit: handleSubmitDeposit,
+							className: "space-y-4",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
+									className: "font-display text-2xl font-bold text-white flex items-center gap-2",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(QrCode, { className: "w-5 h-5 text-emerald-400" }), "Add Coins via UPI QR"]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+									className: "text-xs text-zinc-400 mt-1",
+									children: [
+										"Pay via any UPI app using the official QR code below, then submit your ",
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
+											className: "text-white",
+											children: "12-digit UTR number"
+										}),
+										" for instant inside verification (",
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
+											className: "text-white",
+											children: "₹1 = 1 Coin"
+										}),
+										"). Added coins are non-redeemable; only winning prizes can be withdrawn."
+									]
+								})] }),
+								hasPaymentQrConfigured ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "rounded-xl border border-white/10 bg-[#09090B] p-4 flex flex-col sm:flex-row items-center gap-4",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+										className: "bg-white p-2.5 rounded-xl shrink-0 border border-white/20",
+										children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
+											src: adminSettings.paymentQrDataUrl,
+											alt: "SPIDER ESPORTS Payment QR Code",
+											className: "w-36 h-36 object-contain"
+										})
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "space-y-2 text-xs min-w-0 flex-1 text-center sm:text-left",
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+												className: "font-semibold text-white",
+												children: adminSettings.paymentReceiverName?.trim() || "SPIDER ESPORTS Official Pay"
+											}),
+											adminSettings.paymentUpiId?.trim() && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+												className: "flex flex-wrap items-center justify-center sm:justify-start gap-2",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", {
+													className: "px-2.5 py-1 rounded bg-[#121216] border border-white/10 text-emerald-300 font-mono-tabular break-all",
+													children: adminSettings.paymentUpiId.trim()
+												}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+													type: "button",
+													onClick: handleCopyAdminUpi,
+													className: "min-h-[30px] px-2.5 py-1 rounded border border-white/15 bg-zinc-800 hover:bg-zinc-700 text-[11px] font-semibold text-white inline-flex items-center gap-1",
+													children: copiedUpi ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Check, { className: "w-3 h-3 text-emerald-400" }), " Copied"] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Copy, { className: "w-3 h-3" }), " Copy UPI"] })
+												})]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+												className: "text-[11px] text-zinc-400 leading-relaxed",
+												children: "Scan this QR in PhonePe, Google Pay, Paytm, or BHIM. Copy the 12-digit UTR / Ref No. from your payment receipt and verify below."
+											})
+										]
+									})]
+								}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "rounded-xl border border-amber-500/35 bg-amber-950/20 p-4 text-xs text-amber-200 space-y-1",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+										className: "font-semibold",
+										children: "Payment QR Not Configured Yet"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+										className: "text-amber-100/80",
+										children: "The administrator has not uploaded a Payment QR code yet. Check back shortly once the QR is uploaded in the Admin Console."
+									})]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "flex flex-wrap gap-2",
+									children: ADD_COIN_PRESETS.map((amt) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+										type: "button",
+										onClick: () => setDepositRupees(amt),
+										className: `min-h-[34px] px-3 py-1 rounded-lg border text-xs font-medium tabular-nums transition-colors ${depositRupees === amt ? "bg-emerald-500/20 border-emerald-400 text-emerald-200" : "border-white/10 bg-[#09090B] text-zinc-200 hover:border-white/25"}`,
+										children: [
+											"₹",
+											amt,
+											" (+",
+											amt,
+											" Coins)"
+										]
+									}, amt))
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "grid grid-cols-1 sm:grid-cols-2 gap-3",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+										htmlFor: "dep-amount",
+										className: "block text-xs text-zinc-300 mb-1",
+										children: [
+											"Paid Amount in ₹ (Min ₹",
+											10,
+											")"
+										]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+										id: "dep-amount",
+										type: "number",
+										min: 10,
+										max: MAX_ADD_COIN_RUPEES,
+										step: 1,
+										required: true,
+										value: depositRupees,
+										onChange: (e) => setDepositRupees(Number(e.target.value)),
+										className: "w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
+									})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+										htmlFor: "dep-utr",
+										className: "block text-xs text-zinc-300 mb-1",
+										children: "12-Digit UPI UTR / Ref Number"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+										id: "dep-utr",
+										type: "text",
+										inputMode: "numeric",
+										maxLength: 14,
+										required: true,
+										value: depositUtr,
+										onChange: (e) => setDepositUtr(e.target.value.replace(/[^0-9]/g, "").slice(0, 12)),
+										placeholder: "e.g. 431982745102",
+										className: "w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
+									})] })]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "grid grid-cols-1 sm:grid-cols-2 gap-3",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+										htmlFor: "dep-upi",
+										className: "block text-xs text-zinc-300 mb-1",
+										children: "Your UPI ID (Optional)"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+										id: "dep-upi",
+										type: "text",
+										value: depositPayerUpi,
+										onChange: (e) => setDepositPayerUpi(e.target.value),
+										placeholder: "e.g. you@okaxis",
+										className: "w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-xs text-white"
+									})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "block text-xs text-zinc-300 mb-1",
+											children: "Payment Screenshot (Optional)"
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+											htmlFor: "dep-screenshot",
+											className: `min-h-[44px] w-full px-3 py-2 rounded-lg border border-dashed border-white/20 bg-[#09090B] hover:border-emerald-400/60 text-xs font-medium text-zinc-200 flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${uploadingScreenshot ? "opacity-60 pointer-events-none" : ""}`,
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Upload, { className: "w-3.5 h-3.5 text-emerald-400" }), uploadingScreenshot ? "Uploading..." : depositScreenshotUrl ? "Receipt Attached ✓" : "Choose Receipt"]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+											id: "dep-screenshot",
+											type: "file",
+											accept: ALLOWED_IMAGE_INPUT_ACCEPT,
+											disabled: uploadingScreenshot,
+											onChange: (e) => void handleDepositScreenshotUpload(e),
+											className: "sr-only"
+										})
+									] })]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "rounded-lg bg-[#09090B] border border-white/10 px-4 py-3 flex items-center justify-between text-xs tabular-nums",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "text-zinc-400",
+										children: "Inside Verification Credit"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "text-base font-bold text-amber-400 inline-flex items-center gap-1",
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Coins, { className: "w-4 h-4" }),
+											"+",
+											Number.isFinite(depositRupees) && depositRupees > 0 ? Math.floor(depositRupees).toLocaleString() : 0,
+											" Coins"
+										]
+									})]
+								}),
+								depositError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									role: "alert",
+									className: "text-xs text-[#F43F5E] font-medium",
+									children: depositError
+								}),
+								depositSuccess && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									role: "status",
+									className: "text-xs text-emerald-400 font-medium",
+									children: depositSuccess
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "submit",
+									disabled: submittingDeposit || !hasPaymentQrConfigured || profile.suspended,
+									className: "w-full min-h-[46px] rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-45 disabled:cursor-not-allowed text-xs font-semibold text-white transition-colors inline-flex items-center justify-center gap-2",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleArrowDown, { className: "w-4 h-4" }), submittingDeposit ? "Verifying UTR & Crediting Wallet..." : `Verify & Auto-Add ${Number.isFinite(depositRupees) && depositRupees > 0 ? Math.floor(depositRupees).toLocaleString() : 0} Coins`]
+								})
+							]
+						})]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						className: "lg:col-span-6 rounded-xl border border-white/10 bg-[#121216] p-6 space-y-4",
-						children: [
+						children: walletTab === "add" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "flex flex-wrap items-center justify-between gap-2",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
+								className: "font-display text-2xl font-bold text-white",
+								children: [
+									"QR Add Coin History (",
+									deposits.length,
+									")"
+								]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								className: "text-[11px] text-zinc-400",
+								children: "1 Coin = ₹1 · Single-use UTR inside verification auto-credits your wallet"
+							})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								type: "button",
+								onClick: () => setWalletTab("withdraw"),
+								className: "min-h-[38px] px-3.5 py-1.5 rounded-lg border border-white/15 bg-[#09090B] hover:border-[#E11D48]/60 text-xs font-semibold text-white shrink-0",
+								children: [
+									"View Withdrawals (",
+									withdrawals.length,
+									")"
+								]
+							})]
+						}), deposits.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "rounded-lg bg-[#09090B] border border-white/10 p-6 text-center text-xs text-zinc-400",
+							children: "No QR coin deposits yet. Scan the QR code, enter your 12-digit UTR, and verify to auto-add coins."
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "divide-y divide-white/10",
+							children: deposits.slice(0, 6).map((dep) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "py-3 first:pt-0 last:pb-0 space-y-1 text-xs",
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "flex items-center justify-between gap-2 tabular-nums",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+											className: "text-sm font-semibold text-white",
+											children: [
+												"+",
+												dep.coins.toLocaleString(),
+												" Coins (",
+												formatRupees(dep.rupees),
+												")"
+											]
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: `px-2 py-0.5 rounded border text-[11px] font-semibold ${dep.status === "verified" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" : "bg-[#E11D48]/15 text-[#FB7185] border-[#E11D48]/30"}`,
+											children: dep.status === "verified" ? "Auto-Verified" : "Reversed"
+										})]
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+										className: "text-zinc-400 font-mono-tabular",
+										children: [
+											"UTR: ",
+											dep.utr,
+											" · ",
+											new Date(dep.createdAt).toLocaleString()
+										]
+									}),
+									dep.adminNote && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+										className: "text-[#FB7185] bg-[#09090B] rounded px-2.5 py-1.5 border border-white/5",
+										children: ["Admin Note: ", dep.adminNote]
+									})
+								]
+							}, dep.id))
+						})] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								className: "flex flex-wrap items-center justify-between gap-2",
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
@@ -57163,9 +56278,13 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 										withdrawals.length,
 										")"
 									]
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
 									className: "text-[11px] text-zinc-400",
-									children: "100 Coins = ₹10 · Click any request or open modal for full details"
+									children: [
+										"1 Coin = ₹1 · Min ₹",
+										50,
+										" · Click any request for full details"
+									]
 								})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 									type: "button",
 									onClick: () => openHistoryModal("all"),
@@ -57216,7 +56335,11 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 							}),
 							withdrawals.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								className: "rounded-lg bg-[#09090B] border border-white/10 p-6 text-center text-xs text-zinc-400 space-y-3",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "No withdrawals requested yet. Play matches and earn verified kills/wins to accumulate Spider Coins." }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: [
+									"No withdrawals requested yet. Win matches and eliminations to reach the ₹",
+									50,
+									" winning prize withdrawal threshold."
+								] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 									type: "button",
 									onClick: () => openHistoryModal("all"),
 									className: "min-h-[36px] px-3.5 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 text-xs font-semibold text-zinc-200",
@@ -57276,7 +56399,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 									]
 								})]
 							})
-						]
+						] })
 					})]
 				}),
 				showOwnerPasswordSetup && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
@@ -57356,63 +56479,47 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 					className: "rounded-xl border border-white/10 bg-[#121216] p-6 space-y-4",
-					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "flex items-center justify-between flex-wrap gap-2",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
-								className: "font-display text-2xl font-bold text-white flex items-center gap-2",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Palette, { className: "w-5 h-5 text-[#E11D48]" }), "Profile Cosmetics"]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								className: "text-xs text-zinc-400",
-								children: "Non-cash themes & emblems via Free Fire milestones or optional Rewarded Ad"
-							})]
-						}),
-						rewardAdError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-							role: "alert",
-							className: "text-xs text-[#F43F5E] bg-[#09090B] border border-[#E11D48]/30 rounded-lg px-3 py-2",
-							children: rewardAdError
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-							className: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4",
-							children: COSMETIC_CATALOG.map((item) => {
-								const unlocked = isCosmeticUnlocked(item, profile);
-								const equipped = item.type === "theme" && profile.activeTheme === item.themeId || item.type === "badge" && profile.activeBadge === item.id;
-								const isRewardedAdItem = Boolean(item.rewardedAdUnlock);
-								const rewardedDisabled = adminSettings.rewardedAdsEnabled === false;
-								return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "rounded-xl border border-white/10 bg-[#09090B] p-4 flex flex-col justify-between gap-3",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flex items-center justify-between flex-wrap gap-2",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
+							className: "font-display text-2xl font-bold text-white flex items-center gap-2",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Palette, { className: "w-5 h-5 text-[#E11D48]" }), "Profile Cosmetics"]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "text-xs text-zinc-400",
+							children: "Non-cash themes & emblems unlocked via Free Fire milestones"
+						})]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4",
+						children: COSMETIC_CATALOG.map((item) => {
+							const unlocked = isCosmeticUnlocked(item, profile);
+							const equipped = item.type === "theme" && profile.activeTheme === item.themeId || item.type === "badge" && profile.activeBadge === item.id;
+							return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "rounded-xl border border-white/10 bg-[#09090B] p-4 flex flex-col justify-between gap-3",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "space-y-1",
 									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-										className: "space-y-1",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-											className: "flex items-center justify-between",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-												className: "text-sm font-semibold text-white",
-												children: item.name
-											}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-												className: "w-3.5 h-3.5 rounded-full border border-white/20",
-												style: { backgroundColor: item.previewColor }
-											})]
-										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-											className: "text-xs text-zinc-400",
-											children: item.description
+										className: "flex items-center justify-between",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "text-sm font-semibold text-white",
+											children: item.name
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "w-3.5 h-3.5 rounded-full border border-white/20",
+											style: { backgroundColor: item.previewColor }
 										})]
-									}), isRewardedAdItem && !unlocked ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-										type: "button",
-										disabled: rewardedDisabled || watchingRewardAd,
-										onClick: () => void handleWatchRewardedAd(item.id),
-										className: `min-h-[40px] w-full rounded-lg text-xs font-semibold transition-colors inline-flex items-center justify-center gap-1.5 ${rewardedDisabled ? "bg-zinc-900 text-zinc-500 border border-white/5 cursor-not-allowed" : "bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40"}`,
-										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Play, { className: "w-3.5 h-3.5" }), watchingRewardAd ? "Loading Ad..." : rewardedDisabled ? "Rewarded Ads Paused" : "Watch Ad to Unlock (0 Coins)"]
-									}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-										type: "button",
-										disabled: equipped || !unlocked,
-										onClick: () => handleEquipCosmetic(item.id),
-										className: `min-h-[40px] w-full rounded-lg text-xs font-semibold transition-colors ${equipped ? "bg-zinc-800 text-emerald-400 cursor-default" : unlocked ? "bg-[#E11D48] hover:bg-[#F43F5E] text-white" : "bg-zinc-900 text-zinc-500 border border-white/5 cursor-not-allowed"}`,
-										children: equipped ? "Equipped" : unlocked ? "Equip" : "Locked Milestone"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+										className: "text-xs text-zinc-400",
+										children: item.description
 									})]
-								}, item.id);
-							})
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									disabled: equipped || !unlocked,
+									onClick: () => handleEquipCosmetic(item.id),
+									className: `min-h-[40px] w-full rounded-lg text-xs font-semibold transition-colors ${equipped ? "bg-zinc-800 text-emerald-400 cursor-default" : unlocked ? "bg-[#E11D48] hover:bg-[#F43F5E] text-white" : "bg-zinc-900 text-zinc-500 border border-white/5 cursor-not-allowed"}`,
+									children: equipped ? "Equipped" : unlocked ? "Equip" : "Locked Milestone"
+								})]
+							}, item.id);
 						})
-					]
+					})]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 					className: "grid grid-cols-1 lg:grid-cols-2 gap-6",
@@ -57574,6 +56681,44 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 					})
 				})
 			] }),
+			(() => {
+				const supportInfo = getTelegramSupportInfo(adminSettings);
+				return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+					"aria-label": "Customer Support",
+					className: "rounded-xl border border-sky-500/30 bg-[#121216] p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flex items-start gap-3",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "w-10 h-10 rounded-lg bg-sky-500/15 border border-sky-500/30 flex items-center justify-center shrink-0",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MessageCircle, { className: "w-5 h-5 text-sky-400" })
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "space-y-1",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", {
+								className: "text-sm font-semibold text-white",
+								children: "Customer Support Available 24/7 · Telegram"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								className: "text-xs text-zinc-400",
+								children: supportInfo.configured ? `Have a problem with a match, room ID, coin deposit, or payout? Message ${supportInfo.displayHandle} directly on Telegram.` : "Need help with matches, coin deposits, or withdrawals? Reach our Telegram help desk once connected by admin."
+							})]
+						})]
+					}), supportInfo.configured ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("a", {
+						href: supportInfo.url,
+						target: "_blank",
+						rel: "noopener noreferrer",
+						className: "min-h-[44px] px-5 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-xs font-bold text-slate-950 inline-flex items-center justify-center gap-2 shrink-0 transition-colors",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(MessageCircle, { className: "w-4 h-4" }),
+							"Customer Support",
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExternalLink, { className: "w-3.5 h-3.5" })
+						]
+					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						type: "button",
+						onClick: () => onToast("Telegram support link is being connected by the admin. Please check back shortly."),
+						className: "min-h-[44px] px-5 py-2 rounded-lg border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 text-xs font-semibold text-sky-300 inline-flex items-center justify-center gap-2 shrink-0 transition-colors",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(MessageCircle, { className: "w-4 h-4" }), "Customer Support"]
+					})]
+				});
+			})(),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 				className: "rounded-xl border border-white/10 bg-[#121216] p-6 space-y-4",
 				children: [
@@ -57601,19 +56746,7 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 									type: "button",
 									onClick: () => setLegalDoc(legalDoc === "playstore" ? null : "playstore"),
 									className: "min-h-[36px] px-3 py-1.5 rounded-lg border border-white/10 text-xs text-zinc-300 hover:text-white",
-									children: "Reward & Withdrawal Policy"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-									type: "button",
-									"data-testid": "open-gdpr-consent-btn",
-									onClick: () => setConsentModalOpen(true),
-									className: "min-h-[36px] px-3 py-1.5 rounded-lg border border-[#E11D48]/35 bg-[#E11D48]/10 text-xs font-medium text-white hover:bg-[#E11D48]/20 inline-flex items-center gap-1.5",
-									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { className: "w-3.5 h-3.5 text-[#E11D48]" }),
-										"Ad Privacy & GDPR Consent (",
-										getAdConsentSummary(consentAccepted).shortLabel,
-										")"
-									]
+									children: "Wallet & Withdrawal Policy"
 								})
 							]
 						})]
@@ -57623,28 +56756,27 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "font-semibold text-white",
 							children: "SPIDER ESPORTS Privacy Policy"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "We collect only your email address (isolated in private Firestore storage), unique username, and Free Fire IGN/UID to verify identity and manage free tournament brackets. Google AdMob and Google User Messaging Platform (UMP) serve policy-compliant ads and honor your consent choices. Rewarded ads may unlock optional non-cash profile emblems or play during withdrawal submission (never minting extra Spider Coins or cash). You may delete your account and personal records permanently at any time." })]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "We collect only your email address (isolated in private Firestore storage), unique username, Free Fire IGN/UID, and optional UPI UTR payment reference data submitted when you add coins or request withdrawals. SPIDER ESPORTS contains zero third-party ad networks or ad trackers. You may delete your account and personal records permanently at any time." })]
 					}),
 					legalDoc === "terms" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "rounded-lg bg-[#09090B] border border-white/10 p-4 text-xs text-zinc-300 space-y-2 leading-relaxed",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "font-semibold text-white",
 							children: "Terms & Conditions"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "SPIDER ESPORTS hosts strictly free-to-play community tournaments with zero entry fees, zero deposits, and zero paid participation. Players earn Spider Coins exclusively through verified gameplay (playing, kills, and wins) credited by administrators, redeemable at 100 Spider Coins = ₹10." })]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "SPIDER ESPORTS hosts competitive Free Fire tournaments with an ad-free experience. Players earn Spider Coins through verified match performance or add coins via the official UPI QR option (1 Coin = ₹1). All UTR submissions undergo inside format, uniqueness, and admin audit checks; fraudulent references are reversed automatically." })]
 					}),
 					legalDoc === "playstore" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "rounded-lg bg-[#09090B] border border-white/10 p-4 text-xs text-zinc-300 space-y-2 leading-relaxed",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "font-semibold text-white",
-							children: "Spider Coin Reward & Withdrawal Rules"
+							children: "Spider Coin Wallet, QR Add & Winning Prize Withdrawal Rules"
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("ul", {
 							className: "list-disc pl-5 space-y-1",
 							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Single Currency: Spider Coins are the only redeemable reward unit in SPIDER ESPORTS." }),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Earning Rules: Coins are credited strictly by admins for verified match play, eliminations, and tournament wins." }),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Ad Policy: Rewarded ads never mint extra Spider Coins or cash — they unlock optional non-cash profile emblems or accompany withdrawal submissions in the Android app." }),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Conversion Rate: 100 Spider Coins = ₹10 (minimum withdrawal: 100 Coins)." }),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Verification: Admins verify match results and withdrawal payout details (UPI / Bank) before approval." })
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Single Currency: 1 Spider Coin = ₹1 across tournament prizes, QR deposits, and withdrawals." }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Winning Prize Redemption Only: Only Winning Prize Coins earned from verified tournament victories and eliminations can be redeemed (minimum 50 Winning Coins = ₹50) via UPI ID or Bank Transfer." }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Add Coins via QR (Non-Redeemable): Pay using the admin QR code and submit your unique 12-digit UPI UTR for instant inside verification. Added coins cannot be withdrawn directly." }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: "Audit & Security: Admins audit UTR deposits and verify payout details before approving withdrawals." })
 							]
 						})]
 					}),
@@ -57654,26 +56786,13 @@ function ProfileView({ profile, isSignedIn, isEmailVerified, userEmail, signInPr
 					})
 				]
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AdMobBannerSlot, {
-				settings: adminSettings,
-				screen: "profile",
-				placementLabel: "Profile Footer",
-				consentAccepted,
-				onAcceptConsent: () => onUpdateConsent?.(true)
-			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(WithdrawalHistoryModal, {
 				open: historyModalOpen,
 				withdrawals,
 				availableCoins: userCoins,
+				winningCoins,
 				initialFilter: historyFilter,
 				onClose: () => setHistoryModalOpen(false),
-				onToast
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ConsentManagementModal, {
-				open: consentModalOpen,
-				consentAccepted,
-				onUpdateConsent: (next) => onUpdateConsent?.(next),
-				onClose: () => setConsentModalOpen(false),
 				onToast
 			})
 		]
@@ -57704,12 +56823,13 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 	const [maxSlots, setMaxSlots] = (0, import_react.useState)(12);
 	const [filledSlots, setFilledSlots] = (0, import_react.useState)(0);
 	const [bannerUrl, setBannerUrl] = (0, import_react.useState)(BRAND_ASSETS.battleRoyaleBanner);
+	const [entryFeeCoins, setEntryFeeCoins] = (0, import_react.useState)(0);
 	const [coinReward, setCoinReward] = (0, import_react.useState)(300);
 	const [perKillCoins, setPerKillCoins] = (0, import_react.useState)(10);
 	const [status, setStatus] = (0, import_react.useState)("upcoming");
 	const [published, setPublished] = (0, import_react.useState)(true);
 	const [featured, setFeatured] = (0, import_react.useState)(false);
-	const [rulesText, setRulesText] = (0, import_react.useState)("Free entry community match\nNo emulators allowed");
+	const [rulesText, setRulesText] = (0, import_react.useState)("Mobile devices only — no emulators allowed\nJoin custom room 10 minutes before match time");
 	const [slotDrafts, setSlotDrafts] = (0, import_react.useState)({});
 	const [savingSlotId, setSavingSlotId] = (0, import_react.useState)(null);
 	const [bannerDrafts, setBannerDrafts] = (0, import_react.useState)({});
@@ -57721,11 +56841,15 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 	const [savingRegSlotId, setSavingRegSlotId] = (0, import_react.useState)(null);
 	const [coinDrafts, setCoinDrafts] = (0, import_react.useState)({});
 	const [coinReasons, setCoinReasons] = (0, import_react.useState)({});
+	const [coinTypes, setCoinTypes] = (0, import_react.useState)({});
 	const [savingCoinUid, setSavingCoinUid] = (0, import_react.useState)(null);
 	const [withdrawals, setWithdrawals] = (0, import_react.useState)([]);
 	const [withdrawalFilter, setWithdrawalFilter] = (0, import_react.useState)("all");
 	const [withdrawalNotes, setWithdrawalNotes] = (0, import_react.useState)({});
 	const [processingWdId, setProcessingWdId] = (0, import_react.useState)(null);
+	const [coinDeposits, setCoinDeposits] = (0, import_react.useState)([]);
+	const [depositNotes, setDepositNotes] = (0, import_react.useState)({});
+	const [processingDepositId, setProcessingDepositId] = (0, import_react.useState)(null);
 	const [selectedMatchId, setSelectedMatchId] = (0, import_react.useState)(tournaments[0]?.id || "");
 	const [roomId, setRoomId] = (0, import_react.useState)("");
 	const [roomPassword, setRoomPassword] = (0, import_react.useState)("");
@@ -57747,37 +56871,24 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 	const [notifTitle, setNotifTitle] = (0, import_react.useState)("");
 	const [notifBody, setNotifBody] = (0, import_react.useState)("");
 	const [notifType, setNotifType] = (0, import_react.useState)("tournament");
-	const [adMobMode, setAdMobMode] = (0, import_react.useState)(adminSettings.adMobMode);
-	const [adMobAppId, setAdMobAppId] = (0, import_react.useState)(adminSettings.adMobAppId || ADMOB_OFFICIAL_TEST_IDS.appId);
-	const [adSenseClientId, setAdSenseClientId] = (0, import_react.useState)(adminSettings.adSenseClientId || "");
-	const [bannerUnit, setBannerUnit] = (0, import_react.useState)(adminSettings.bannerAdUnitId);
-	const [interstitialUnit, setInterstitialUnit] = (0, import_react.useState)(adminSettings.interstitialAdUnitId);
-	const [rewardedUnit, setRewardedUnit] = (0, import_react.useState)(adminSettings.rewardedAdUnitId);
-	const [bannerAdsEnabled, setBannerAdsEnabled] = (0, import_react.useState)(adminSettings.bannerAdsEnabled !== false);
-	const [interstitialAdsEnabled, setInterstitialAdsEnabled] = (0, import_react.useState)(adminSettings.interstitialAdsEnabled !== false);
-	const [rewardedAdsEnabled, setRewardedAdsEnabled] = (0, import_react.useState)(adminSettings.rewardedAdsEnabled !== false);
-	const [interstitialCooldownSeconds, setInterstitialCooldownSeconds] = (0, import_react.useState)(adminSettings.interstitialCooldownSeconds ?? 90);
-	const [bannerPlacement, setBannerPlacement] = (0, import_react.useState)(adminSettings.bannerPlacement || "all_screens");
+	const [paymentQrDataUrl, setPaymentQrDataUrl] = (0, import_react.useState)(adminSettings.paymentQrDataUrl || "");
+	const [paymentUpiId, setPaymentUpiId] = (0, import_react.useState)(adminSettings.paymentUpiId || "");
+	const [paymentReceiverName, setPaymentReceiverName] = (0, import_react.useState)(adminSettings.paymentReceiverName || "");
 	const [featuredAnn, setFeaturedAnn] = (0, import_react.useState)(adminSettings.featuredAnnouncement || "");
-	const [adMobError, setAdMobError] = (0, import_react.useState)(null);
-	const [copiedAppAdsTxt, setCopiedAppAdsTxt] = (0, import_react.useState)(false);
-	const [adMobStatus, setAdMobStatus] = (0, import_react.useState)(() => getAdMobIntegrationStatus());
+	const [uploadingQr, setUploadingQr] = (0, import_react.useState)(false);
+	const [qrSettingsError, setQrSettingsError] = (0, import_react.useState)(null);
+	const [savingQrSettings, setSavingQrSettings] = (0, import_react.useState)(false);
+	const [telegramSupportUrlInput, setTelegramSupportUrlInput] = (0, import_react.useState)(adminSettings.telegramSupportUrl || "");
+	const [telegramSupportLabelInput, setTelegramSupportLabelInput] = (0, import_react.useState)(adminSettings.telegramSupportLabel || "");
+	const [telegramSupportError, setTelegramSupportError] = (0, import_react.useState)(null);
+	const [savingTelegramSupport, setSavingTelegramSupport] = (0, import_react.useState)(false);
 	(0, import_react.useEffect)(() => {
-		return subscribeAdMobStatus(setAdMobStatus);
-	}, []);
-	(0, import_react.useEffect)(() => {
-		setAdMobMode(adminSettings.adMobMode);
-		setAdMobAppId(adminSettings.adMobAppId || ADMOB_OFFICIAL_TEST_IDS.appId);
-		setAdSenseClientId(adminSettings.adSenseClientId || "");
-		setBannerUnit(adminSettings.bannerAdUnitId);
-		setInterstitialUnit(adminSettings.interstitialAdUnitId);
-		setRewardedUnit(adminSettings.rewardedAdUnitId);
-		setBannerAdsEnabled(adminSettings.bannerAdsEnabled !== false);
-		setInterstitialAdsEnabled(adminSettings.interstitialAdsEnabled !== false);
-		setRewardedAdsEnabled(adminSettings.rewardedAdsEnabled !== false);
-		setInterstitialCooldownSeconds(adminSettings.interstitialCooldownSeconds ?? 90);
-		setBannerPlacement(adminSettings.bannerPlacement || "all_screens");
+		setPaymentQrDataUrl(adminSettings.paymentQrDataUrl || "");
+		setPaymentUpiId(adminSettings.paymentUpiId || "");
+		setPaymentReceiverName(adminSettings.paymentReceiverName || "");
 		setFeaturedAnn(adminSettings.featuredAnnouncement || "");
+		setTelegramSupportUrlInput(adminSettings.telegramSupportUrl || "");
+		setTelegramSupportLabelInput(adminSettings.telegramSupportLabel || "");
 	}, [adminSettings]);
 	(0, import_react.useEffect)(() => {
 		setSlotDrafts(() => {
@@ -57834,8 +56945,12 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 	}, [selectedMatchId, isSoleOwner]);
 	(0, import_react.useEffect)(() => {
 		if (!isSoleOwner) return;
-		const unsub = adminSubscribeWithdrawals(setWithdrawals);
-		return () => unsub();
+		const unsubWithdrawals = adminSubscribeWithdrawals(setWithdrawals);
+		const unsubDeposits = adminSubscribeCoinDeposits(setCoinDeposits);
+		return () => {
+			unsubWithdrawals();
+			unsubDeposits();
+		};
 	}, [isSoleOwner]);
 	const loadUsers = async () => {
 		setLoadingUsers(true);
@@ -57861,12 +56976,13 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 		setMaxSlots(12);
 		setFilledSlots(0);
 		setBannerUrl(BRAND_ASSETS.battleRoyaleBanner);
+		setEntryFeeCoins(0);
 		setCoinReward(300);
 		setPerKillCoins(10);
 		setStatus("upcoming");
 		setPublished(true);
 		setFeatured(false);
-		setRulesText("Free entry community match\nNo emulators allowed");
+		setRulesText("Mobile devices only — no emulators allowed\nJoin custom room 10 minutes before match time");
 	};
 	const handleEditTournament = (t) => {
 		setEditingId(t.id);
@@ -57882,6 +56998,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 		setFilledSlots(t.filledSlots);
 		setBannerUrl(resolveBundledAssetUrl(t.bannerUrl, getDefaultCategoryBanner(t.category)));
 		setFormBannerError(null);
+		setEntryFeeCoins(getTournamentEntryFee(t));
 		setCoinReward(t.coinReward);
 		setPerKillCoins(t.perKillCoins);
 		setStatus(t.status);
@@ -57891,6 +57008,21 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 	};
 	const handleSaveTournament = async (e) => {
 		e.preventDefault();
+		const modeCheck = validateCustomModeName(String(mode));
+		if (!modeCheck.valid) {
+			onToast(modeCheck.error);
+			return;
+		}
+		const feeCheck = validateEntryFeeCoins(Math.floor(Number(entryFeeCoins)));
+		if (!feeCheck.valid) {
+			onToast(feeCheck.error);
+			return;
+		}
+		const prizeCheck = validatePrizePoolCoins(Math.floor(Number(coinReward)), Math.floor(Number(perKillCoins)));
+		if (!prizeCheck.valid) {
+			onToast(prizeCheck.error);
+			return;
+		}
 		const nextMax = Number(maxSlots);
 		const liveFilled = editingId ? filledSlots : 0;
 		const slotValidation = validateAdminSlotUpdate(nextMax, liveFilled);
@@ -57909,7 +57041,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 				id,
 				title: title.trim(),
 				category,
-				mode,
+				mode: modeCheck.mode,
 				mapName: mapName.trim(),
 				bannerUrl: bannerValidation.bannerUrl,
 				matchDate,
@@ -57922,8 +57054,9 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 				featured,
 				published,
 				rules: rulesText.split("\n").map((r) => r.trim()).filter(Boolean),
-				coinReward: Math.max(0, Math.floor(Number(coinReward))),
-				perKillCoins: Math.max(0, Math.floor(Number(perKillCoins))),
+				entryFeeCoins: feeCheck.entryFeeCoins,
+				coinReward: prizeCheck.coinReward,
+				perKillCoins: prizeCheck.perKillCoins,
 				createdBy: adminUid
 			}, !editingId);
 			onToast(editingId ? "Tournament updated." : "Tournament created in Firestore.");
@@ -58019,13 +57152,15 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 	};
 	const handleAdjustCoins = async (user) => {
 		const rawDelta = Number(coinDrafts[user.uid]);
-		const reason = coinReasons[user.uid] || "Match reward credited by admin";
+		const coinType = coinTypes[user.uid] ?? "winning";
+		const reason = coinReasons[user.uid] || "Match prize credited by admin";
 		setSavingCoinUid(user.uid);
 		try {
-			const nextBalance = await adminAdjustUserCoins({
+			const result = await adminAdjustUserCoins({
 				userId: user.uid,
 				deltaCoins: rawDelta,
-				reason
+				reason,
+				coinType
 			});
 			setCoinDrafts((prev) => ({
 				...prev,
@@ -58035,7 +57170,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 				...prev,
 				[user.uid]: ""
 			}));
-			onToast(`${user.username} wallet updated to ${nextBalance.toLocaleString()} coins.`);
+			onToast(`${user.username} wallet updated: ${result.nextCoins.toLocaleString()} total (${result.nextWinningCoins.toLocaleString()} winning prize).`);
 			await loadUsers();
 		} catch (err) {
 			onToast(err instanceof Error ? err.message : "Unable to adjust coins.");
@@ -58056,6 +57191,38 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 			onToast(err instanceof Error ? err.message : "Unable to process withdrawal.");
 		} finally {
 			setProcessingWdId(null);
+		}
+	};
+	const handleRejectCoinDeposit = async (deposit) => {
+		setProcessingDepositId(deposit.id);
+		try {
+			await adminRejectCoinDeposit({
+				deposit,
+				adminNote: depositNotes[deposit.id] || ""
+			});
+			onToast(`Reversed deposit UTR ${deposit.utr} and deducted ${deposit.coins.toLocaleString()} coins from ${deposit.username}.`);
+		} catch (err) {
+			onToast(err instanceof Error ? err.message : "Unable to reverse coin deposit.");
+		} finally {
+			setProcessingDepositId(null);
+		}
+	};
+	const handleQrFileUpload = async (e) => {
+		const file = e.target.files?.[0];
+		e.target.value = "";
+		if (!file) return;
+		setQrSettingsError(null);
+		setUploadingQr(true);
+		try {
+			const result = await compressQrImageFileToDataUrl(file);
+			setPaymentQrDataUrl(result.dataUrl);
+			onToast(`Payment QR prepared (${result.width}x${result.height}, ~${result.approxKb} KB). Click Save QR Settings to publish.`);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : "Unable to process Payment QR image.";
+			setQrSettingsError(msg);
+			onToast(msg);
+		} finally {
+			setUploadingQr(false);
 		}
 	};
 	const handlePublishRoom = async (e) => {
@@ -58203,7 +57370,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 					children: [
 						"Owner-locked control center (",
 						SOLE_ADMIN_EMAIL,
-						") for tournaments, live slots, Spider Coins, withdrawals, rooms, and AdMob."
+						") for tournaments, live slots, Spider Coins, withdrawals, QR deposits, and rooms."
 					]
 				})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 					type: "button",
@@ -58234,12 +57401,12 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 					},
 					{
 						id: "withdrawals",
-						label: pendingWithdrawalsCount > 0 ? `Withdrawals (${pendingWithdrawalsCount})` : "Withdrawals",
+						label: pendingWithdrawalsCount > 0 ? `Wallet & Payouts (${pendingWithdrawalsCount})` : "Wallet & Payouts",
 						icon: Wallet
 					},
 					{
 						id: "app",
-						label: "Alerts & AdMob",
+						label: "Alerts & QR Settings",
 						icon: Settings
 					}
 				].map((tab) => {
@@ -58265,7 +57432,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 							className: "flex items-center justify-between",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", {
 								className: "font-display text-xl font-bold text-white",
-								children: editingId ? "Edit Tournament" : "Create Free Tournament"
+								children: editingId ? "Edit Tournament" : "Create Tournament"
 							}), editingId && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 								type: "button",
 								onClick: resetTournamentForm,
@@ -58287,7 +57454,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 							className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
 						})] }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "grid grid-cols-2 gap-3",
+							className: "grid grid-cols-1 sm:grid-cols-2 gap-3",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
 								htmlFor: "adm-cat",
 								className: "block text-xs text-zinc-300 mb-1",
@@ -58299,9 +57466,15 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 									const nextCat = e.target.value;
 									const prevDefault = getDefaultCategoryBanner(category);
 									setCategory(nextCat);
-									const firstMode = CATEGORIES_WITH_MODES[nextCat][0];
-									setMode(firstMode);
-									setMaxSlots(getModeDefinition(firstMode).defaultMaxSlots);
+									if (nextCat === "Custom") {
+										const nextCustomMode = category === "Custom" && String(mode).trim() ? mode : pickRandomCustomModeName();
+										setMode(nextCustomMode);
+										setMaxSlots(getModeDefinition(nextCustomMode).defaultMaxSlots);
+									} else {
+										const firstMode = CATEGORIES_WITH_MODES[nextCat][0];
+										setMode(firstMode);
+										setMaxSlots(getModeDefinition(firstMode).defaultMaxSlots);
+									}
 									if (!editingId && bannerUrl === prevDefault) setBannerUrl(getDefaultCategoryBanner(nextCat));
 								},
 								className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white",
@@ -58317,13 +57490,36 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
 										value: "Lone Wolf",
 										children: "Lone Wolf"
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+										value: "Custom",
+										children: "Custom / Random Mode"
 									})
 								]
 							})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
 								htmlFor: "adm-mode",
 								className: "block text-xs text-zinc-300 mb-1",
-								children: "Mode"
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("select", {
+								children: category === "Custom" ? "Custom Mode Name" : "Mode"
+							}), category === "Custom" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "flex items-center gap-2",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+									id: "adm-mode",
+									type: "text",
+									required: true,
+									minLength: 2,
+									maxLength: 48,
+									value: mode,
+									onChange: (e) => setMode(e.target.value),
+									placeholder: "e.g. Sniper Only 1v1",
+									className: "min-w-0 flex-1 min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => setMode(pickRandomCustomModeName(String(mode))),
+									title: "Pick random mode name",
+									className: "min-h-[42px] px-3 py-2 rounded-lg border border-white/15 bg-[#09090B] hover:bg-white/5 text-xs font-semibold text-zinc-200 inline-flex items-center gap-1 shrink-0",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Shuffle, { className: "w-3.5 h-3.5 text-[#F43F5E]" }), "Random"]
+								})]
+							}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("select", {
 								id: "adm-mode",
 								value: mode,
 								onChange: (e) => {
@@ -58427,16 +57623,60 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 							]
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "rounded-lg border border-white/10 bg-[#09090B] p-3 space-y-2.5",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "flex items-center justify-between gap-2",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+										htmlFor: "adm-entry-fee",
+										className: "text-xs font-medium text-zinc-200",
+										children: "Entry Fee (Coins · ₹)"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "text-[11px] font-semibold tabular-nums text-amber-300",
+										children: entryFeeCoins === 0 ? "FREE (0 Coins)" : formatEntryFeeLabel(entryFeeCoins)
+									})]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "flex flex-wrap items-center gap-1.5",
+									children: [
+										0,
+										10,
+										20,
+										50,
+										100
+									].map((presetFee) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+										type: "button",
+										onClick: () => setEntryFeeCoins(presetFee),
+										className: `min-h-[32px] px-2.5 py-1 rounded text-[11px] font-semibold border transition-colors ${entryFeeCoins === presetFee ? "bg-[#E11D48]/25 border-[#E11D48] text-white" : "bg-[#121216] border-white/10 text-zinc-300 hover:text-white"}`,
+										children: presetFee === 0 ? "Free (0)" : `${presetFee} (₹${presetFee})`
+									}, presetFee))
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+									id: "adm-entry-fee",
+									type: "number",
+									min: 0,
+									max: 1e6,
+									value: entryFeeCoins,
+									onChange: (e) => setEntryFeeCoins(Number(e.target.value)),
+									className: "w-full min-h-[40px] px-3 py-1.5 rounded-lg border border-white/10 bg-[#121216] text-sm font-mono-tabular text-white"
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "text-[11px] text-zinc-400",
+									children: "Set 0 to keep this match Free, or enter any Spider Coin entry fee (1 Coin = ₹1)."
+								})
+							]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "grid grid-cols-2 gap-3",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
 								htmlFor: "adm-coins",
 								className: "block text-xs text-zinc-300 mb-1",
-								children: "1st Position Coins (Win Bonus)"
+								children: "1st Position Prize Pool (Coins)"
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
 								id: "adm-coins",
 								type: "number",
 								min: 0,
-								max: 1e5,
+								max: 1e7,
 								value: coinReward,
 								onChange: (e) => setCoinReward(Number(e.target.value)),
 								className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
@@ -58448,7 +57688,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 								id: "adm-kill-coins",
 								type: "number",
 								min: 0,
-								max: 1e4,
+								max: 1e5,
 								value: perKillCoins,
 								onChange: (e) => setPerKillCoins(Number(e.target.value)),
 								className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
@@ -58568,7 +57808,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 							type: "submit",
 							className: "w-full min-h-[46px] rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] text-xs font-semibold text-white",
-							children: editingId ? "Save Tournament Changes" : "Publish Free Tournament"
+							children: editingId ? "Save Tournament Changes" : "Publish Tournament"
 						})
 					]
 				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -58595,6 +57835,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 							const draftBanner = bannerDrafts[t.id] ?? currentBanner;
 							const isBannerDirty = draftBanner.trim() !== currentBanner;
 							const isUploadingInline = uploadingInlineBannerId === t.id;
+							const tEntryFee = getTournamentEntryFee(t);
 							return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								className: "py-4 space-y-3",
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -58617,13 +57858,15 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 													t.category,
 													" · ",
 													t.mode,
-													" · ",
+													" · Entry: ",
+													formatEntryFeeLabel(tEntryFee, true),
+													" · Prize: +",
+													t.coinReward.toLocaleString(),
+													" Coins · ",
 													t.filledSlots,
 													"/",
 													t.maxSlots,
-													" joined · +",
-													t.coinReward,
-													" Coins · ",
+													" joined · ",
 													t.status
 												]
 											})]
@@ -59229,8 +58472,10 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 											children: [
 												/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Coins, { className: "w-3.5 h-3.5" }),
 												u.coins.toLocaleString(),
-												" Coins (",
-												formatRupees(calculateRupeesFromCoins(u.coins)),
+												" Total · ",
+												getRedeemableWinningCoins(u).toLocaleString(),
+												" Winning Prize (",
+												formatRupees(calculateRupeesFromCoins(getRedeemableWinningCoins(u))),
 												")"
 											]
 										})
@@ -59247,6 +58492,22 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								className: "flex flex-wrap items-center gap-2 rounded-lg bg-[#09090B] border border-white/10 p-2.5",
 								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
+										"aria-label": `Coin type for ${u.username}`,
+										value: coinTypes[u.uid] ?? "winning",
+										onChange: (e) => setCoinTypes((prev) => ({
+											...prev,
+											[u.uid]: e.target.value
+										})),
+										className: "min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs text-white",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+											value: "winning",
+											children: "Winning Prize (Redeemable)"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+											value: "bonus",
+											children: "Bonus / Added (Non-Redeemable)"
+										})]
+									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
 										type: "number",
 										"aria-label": `Coins to credit ${u.username}`,
@@ -59256,7 +58517,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 											[u.uid]: e.target.value
 										})),
 										placeholder: "+Coins (e.g. 200)",
-										className: "w-32 min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs font-mono-tabular text-white"
+										className: "w-28 min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs font-mono-tabular text-white"
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
 										type: "text",
@@ -59266,8 +58527,8 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 											...prev,
 											[u.uid]: e.target.value
 										})),
-										placeholder: "Reason (e.g. 5 Kills + Match Play)",
-										className: "flex-1 min-w-[160px] min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs text-white"
+										placeholder: "Reason (e.g. Match Booyah + Kills)",
+										className: "flex-1 min-w-[140px] min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs text-white"
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 										type: "button",
@@ -59369,99 +58630,209 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 				})]
 			}),
 			section === "withdrawals" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "rounded-xl border border-white/10 bg-[#121216] p-5 space-y-4",
+				className: "space-y-6",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "flex flex-col sm:flex-row sm:items-center justify-between gap-3",
+					className: "rounded-xl border border-white/10 bg-[#121216] p-5 space-y-4",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flex flex-col sm:flex-row sm:items-center justify-between gap-3",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
+							className: "font-display text-xl font-bold text-white flex items-center gap-2",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Wallet, { className: "w-5 h-5 text-amber-400" }),
+								"Winning Prize Withdrawals (1 Coin = ₹1 · Min ",
+								50,
+								" Winning Coins / ₹",
+								50,
+								")"
+							]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: "text-xs text-zinc-400 mt-0.5",
+							children: "Only Winning Prize Coins can be redeemed. Approve paid payouts or reject to refund winning prize coins back to the player."
+						})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "flex flex-wrap gap-2",
+							children: [
+								"all",
+								"pending",
+								"approved",
+								"rejected"
+							].map((st) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								onClick: () => setWithdrawalFilter(st),
+								className: `min-h-[36px] px-3 py-1 rounded-lg text-xs font-semibold capitalize ${withdrawalFilter === st ? "bg-[#E11D48] text-white" : "bg-[#09090B] text-zinc-400 border border-white/10 hover:text-white"}`,
+								children: st
+							}, st))
+						})]
+					}), visibleWithdrawals.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+						className: "text-xs text-zinc-400 py-6 text-center",
+						children: "No withdrawal requests match the selected filter."
+					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "divide-y divide-white/10",
+						children: visibleWithdrawals.map((wd) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "py-4 space-y-3 text-xs",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "flex flex-col sm:flex-row sm:items-center justify-between gap-2",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+									className: "text-sm font-bold text-white",
+									children: [
+										wd.username,
+										" · ",
+										formatRupees(wd.rupees),
+										" (",
+										wd.coins.toLocaleString(),
+										" Coins)"
+									]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+									className: "text-zinc-400 font-mono-tabular",
+									children: [
+										"FF UID: ",
+										wd.freeFireUid,
+										" · ",
+										wd.method.toUpperCase(),
+										": ",
+										wd.destination,
+										" ·",
+										" ",
+										new Date(wd.createdAt).toLocaleString()
+									]
+								})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: `font-semibold capitalize shrink-0 ${wd.status === "approved" ? "text-emerald-400" : wd.status === "rejected" ? "text-[#F43F5E]" : "text-amber-400"}`,
+									children: wd.status
+								})]
+							}), wd.status === "pending" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "flex flex-wrap items-center gap-2",
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+										type: "text",
+										"aria-label": `Admin note for ${wd.username}`,
+										value: withdrawalNotes[wd.id] ?? "",
+										onChange: (e) => setWithdrawalNotes((prev) => ({
+											...prev,
+											[wd.id]: e.target.value
+										})),
+										placeholder: "Optional UTR / Payout Reference or Rejection Reason",
+										className: "flex-1 min-w-[220px] min-h-[38px] px-3 py-1.5 rounded-lg border border-white/10 bg-[#09090B] text-xs text-white"
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+										type: "button",
+										disabled: processingWdId === wd.id,
+										onClick: () => void handleProcessWithdrawal(wd, "approved"),
+										className: "min-h-[38px] px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white",
+										children: "Approve & Mark Paid"
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+										type: "button",
+										disabled: processingWdId === wd.id,
+										onClick: () => void handleProcessWithdrawal(wd, "rejected"),
+										className: "min-h-[38px] px-3.5 py-1.5 rounded-lg border border-[#E11D48]/50 text-[#F43F5E] hover:bg-[#E11D48]/10 text-xs font-semibold",
+										children: "Reject & Refund Coins"
+									})
+								]
+							}) : wd.adminNote && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+								className: "text-zinc-300 bg-[#09090B] rounded px-3 py-1.5 border border-white/5",
+								children: ["Note: ", wd.adminNote]
+							})]
+						}, wd.id))
+					})]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "rounded-xl border border-white/10 bg-[#121216] p-5 space-y-4",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
 						className: "font-display text-xl font-bold text-white flex items-center gap-2",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Wallet, { className: "w-5 h-5 text-amber-400" }), "Player Withdrawal Requests (100 Coins = ₹10)"]
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(QrCode, { className: "w-5 h-5 text-emerald-400" }),
+							"QR Add Coin Deposits (",
+							coinDeposits.length,
+							")"
+						]
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 						className: "text-xs text-zinc-400 mt-0.5",
-						children: "Approve paid payouts or reject to automatically refund Spider Coins to the player wallet."
-					})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "flex flex-wrap gap-2",
-						children: [
-							"all",
-							"pending",
-							"approved",
-							"rejected"
-						].map((st) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							onClick: () => setWithdrawalFilter(st),
-							className: `min-h-[36px] px-3 py-1 rounded-lg text-xs font-semibold capitalize ${withdrawalFilter === st ? "bg-[#E11D48] text-white" : "bg-[#09090B] text-zinc-400 border border-white/10 hover:text-white"}`,
-							children: st
-						}, st))
-					})]
-				}), visibleWithdrawals.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-					className: "text-xs text-zinc-400 py-6 text-center",
-					children: "No withdrawal requests match the selected filter."
-				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-					className: "divide-y divide-white/10",
-					children: visibleWithdrawals.map((wd) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "py-4 space-y-3 text-xs",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "flex flex-col sm:flex-row sm:items-center justify-between gap-2",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-								className: "text-sm font-bold text-white",
-								children: [
-									wd.username,
-									" · ",
-									formatRupees(wd.rupees),
-									" (",
-									wd.coins.toLocaleString(),
-									" Coins)"
-								]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-								className: "text-zinc-400 font-mono-tabular",
-								children: [
-									"FF UID: ",
-									wd.freeFireUid,
-									" · ",
-									wd.method.toUpperCase(),
-									": ",
-									wd.destination,
-									" ·",
-									" ",
-									new Date(wd.createdAt).toLocaleString()
-								]
-							})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								className: `font-semibold capitalize shrink-0 ${wd.status === "approved" ? "text-emerald-400" : wd.status === "rejected" ? "text-[#F43F5E]" : "text-amber-400"}`,
-								children: wd.status
-							})]
-						}), wd.status === "pending" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "flex flex-wrap items-center gap-2",
+						children: "Payments submitted through Add Coins are inside-verified using unique 12-digit UTRs and auto-credited (1 Coin = ₹1). Rejecting a fraudulent UTR automatically deducts those coins."
+					})] }), coinDeposits.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+						className: "text-xs text-zinc-400 py-6 text-center",
+						children: "No QR coin deposits recorded yet."
+					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "divide-y divide-white/10",
+						children: coinDeposits.map((dep) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "py-4 space-y-3 text-xs",
 							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-									type: "text",
-									"aria-label": `Admin note for ${wd.username}`,
-									value: withdrawalNotes[wd.id] ?? "",
-									onChange: (e) => setWithdrawalNotes((prev) => ({
-										...prev,
-										[wd.id]: e.target.value
-									})),
-									placeholder: "Optional UTR / Payout Reference or Rejection Reason",
-									className: "flex-1 min-w-[220px] min-h-[38px] px-3 py-1.5 rounded-lg border border-white/10 bg-[#09090B] text-xs text-white"
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "flex flex-col sm:flex-row sm:items-start justify-between gap-3",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "space-y-1",
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+												className: "text-sm font-bold text-white",
+												children: [
+													dep.username,
+													" · +",
+													dep.coins.toLocaleString(),
+													" Coins (",
+													formatRupees(dep.rupees),
+													")"
+												]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+												className: "text-zinc-400 font-mono-tabular",
+												children: [
+													"UTR: ",
+													/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
+														className: "text-zinc-200",
+														children: dep.utr
+													}),
+													" · FF UID: ",
+													dep.freeFireUid,
+													dep.payerUpi ? ` · Payer UPI: ${dep.payerUpi}` : "",
+													" ·",
+													" ",
+													new Date(dep.createdAt).toLocaleString()
+												]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+												className: "text-[11px] text-zinc-400",
+												children: dep.verificationNote
+											})
+										]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: `px-2 py-0.5 rounded border text-[11px] font-semibold shrink-0 ${dep.status === "verified" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" : "bg-[#E11D48]/15 text-[#FB7185] border-[#E11D48]/30"}`,
+										children: dep.status === "verified" ? "Auto-Verified" : "Reversed"
+									})]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-									type: "button",
-									disabled: processingWdId === wd.id,
-									onClick: () => void handleProcessWithdrawal(wd, "approved"),
-									className: "min-h-[38px] px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white",
-									children: "Approve & Mark Paid"
+								dep.screenshotUrl && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "rounded-lg border border-white/10 bg-[#09090B] p-2.5 inline-block",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+										className: "text-[11px] text-zinc-400 mb-1.5",
+										children: "Attached Payment Receipt"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
+										src: dep.screenshotUrl,
+										alt: `Receipt for UTR ${dep.utr}`,
+										className: "max-h-48 rounded border border-white/10 object-contain"
+									})]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-									type: "button",
-									disabled: processingWdId === wd.id,
-									onClick: () => void handleProcessWithdrawal(wd, "rejected"),
-									className: "min-h-[38px] px-3.5 py-1.5 rounded-lg border border-[#E11D48]/50 text-[#F43F5E] hover:bg-[#E11D48]/10 text-xs font-semibold",
-									children: "Reject & Refund Coins"
+								dep.status === "verified" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "flex flex-wrap items-center gap-2",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+										type: "text",
+										"aria-label": `Rejection reason for UTR ${dep.utr}`,
+										value: depositNotes[dep.id] ?? "",
+										onChange: (e) => setDepositNotes((prev) => ({
+											...prev,
+											[dep.id]: e.target.value
+										})),
+										placeholder: "Reason if UTR not found on bank statement",
+										className: "flex-1 min-w-[220px] min-h-[38px] px-3 py-1.5 rounded-lg border border-white/10 bg-[#09090B] text-xs text-white"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+										type: "button",
+										disabled: processingDepositId === dep.id,
+										onClick: () => void handleRejectCoinDeposit(dep),
+										className: "min-h-[38px] px-3.5 py-1.5 rounded-lg border border-[#E11D48]/50 text-[#F43F5E] hover:bg-[#E11D48]/10 text-xs font-semibold",
+										children: processingDepositId === dep.id ? "Reversing..." : "Reject & Deduct Coins"
+									})]
+								}) : dep.adminNote && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+									className: "text-[#FB7185] bg-[#09090B] rounded px-3 py-1.5 border border-white/5",
+									children: ["Reversed Reason: ", dep.adminNote]
 								})
 							]
-						}) : wd.adminNote && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-							className: "text-zinc-300 bg-[#09090B] rounded px-3 py-1.5 border border-white/5",
-							children: ["Note: ", wd.adminNote]
-						})]
-					}, wd.id))
+						}, dep.id))
+					})]
 				})]
 			}),
 			section === "app" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -59575,6 +58946,10 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
 											value: "withdrawal",
 											children: "Withdrawal Update"
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+											value: "deposit",
+											children: "Coin Deposit Update"
 										})
 									]
 								})]
@@ -59605,463 +58980,328 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
 						onSubmit: async (e) => {
 							e.preventDefault();
-							setAdMobError(null);
-							const parsedCooldown = Math.floor(Number(interstitialCooldownSeconds));
-							const err = validateAdMobAppId(adMobAppId) || validateAdMobUnitId(bannerUnit, "Banner Ad Unit ID") || validateAdMobUnitId(interstitialUnit, "Interstitial Ad Unit ID") || validateAdMobUnitId(rewardedUnit, "Rewarded Ad Unit ID") || validateAdSenseClientId(adSenseClientId) || validateInterstitialCooldownSeconds(parsedCooldown);
-							if (err) {
-								setAdMobError(err);
+							setQrSettingsError(null);
+							const trimmedUpi = paymentUpiId.trim();
+							if (trimmedUpi && !/^[a-zA-Z0-9._-]{2,64}@[a-zA-Z]{2,32}$/.test(trimmedUpi)) {
+								setQrSettingsError("Enter a valid UPI ID (e.g. yourname@okaxis), or leave blank.");
 								return;
 							}
-							await adminUpdateSettings({
-								id: "default",
-								adMobMode,
-								adMobAppId: adMobAppId.trim(),
-								adSenseClientId: adSenseClientId.trim(),
-								bannerAdUnitId: bannerUnit.trim(),
-								interstitialAdUnitId: interstitialUnit.trim(),
-								rewardedAdUnitId: rewardedUnit.trim(),
-								bannerAdsEnabled,
-								interstitialAdsEnabled,
-								rewardedAdsEnabled,
-								interstitialCooldownSeconds: parsedCooldown,
-								bannerPlacement,
-								featuredAnnouncement: featuredAnn.trim(),
-								maintenanceMode: false
-							});
-							onToast("AdMob & platform settings updated in Firestore.");
+							setSavingQrSettings(true);
+							try {
+								await adminUpdateSettings({
+									id: "default",
+									...paymentQrDataUrl.trim() ? { paymentQrDataUrl: paymentQrDataUrl.trim() } : {},
+									...trimmedUpi ? { paymentUpiId: trimmedUpi } : {},
+									...paymentReceiverName.trim() ? { paymentReceiverName: paymentReceiverName.trim() } : {},
+									...adminSettings.telegramSupportUrl?.trim() ? { telegramSupportUrl: adminSettings.telegramSupportUrl.trim() } : {},
+									...adminSettings.telegramSupportLabel?.trim() ? { telegramSupportLabel: adminSettings.telegramSupportLabel.trim() } : {},
+									featuredAnnouncement: featuredAnn.trim(),
+									maintenanceMode: false
+								});
+								onToast("Payment QR & wallet settings saved to Firestore.");
+							} catch (err) {
+								const msg = err instanceof Error ? err.message : "Unable to save QR settings.";
+								setQrSettingsError(msg);
+								onToast(msg);
+							} finally {
+								setSavingQrSettings(false);
+							}
 						},
-						className: "lg:col-span-2 rounded-xl border border-white/10 bg-[#121216] p-5 space-y-4",
+						className: "lg:col-span-2 rounded-xl border border-white/10 bg-[#121216] p-5 space-y-5",
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "flex flex-col sm:flex-row sm:items-center justify-between gap-3",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", {
-									className: "font-display text-xl font-bold text-white",
-									children: "Google AdMob Configuration & Banner Controls"
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-									className: "text-xs text-zinc-400 mt-0.5",
-									children: [
-										"Runtime Bridge:",
-										" ",
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "text-zinc-200 font-medium",
-											children: getAdMobRuntimeLabel(detectAdMobRuntime())
-										})
-									]
-								})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "flex flex-wrap items-center gap-2 shrink-0",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-										type: "button",
-										onClick: () => {
-											setAdMobError(null);
-											setAdMobMode("test");
-											setAdMobAppId(ADMOB_OFFICIAL_TEST_IDS.appId);
-											setBannerUnit(ADMOB_OFFICIAL_TEST_IDS.banner);
-											setInterstitialUnit(ADMOB_OFFICIAL_TEST_IDS.interstitial);
-											setRewardedUnit(ADMOB_OFFICIAL_TEST_IDS.rewarded);
-											onToast("Filled official Google AdMob Test App ID & Unit IDs.");
-										},
-										className: "min-h-[38px] px-3.5 py-1.5 rounded-lg border border-white/15 bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-white",
-										children: "Fill Official Google Test IDs"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-										type: "button",
-										onClick: () => {
-											setAdMobError(null);
-											setAdMobMode("production");
-											setAdMobAppId(ADMOB_PRODUCTION_CREDENTIALS.appId);
-											setBannerUnit(ADMOB_PRODUCTION_CREDENTIALS.banner);
-											setInterstitialUnit(ADMOB_PRODUCTION_CREDENTIALS.interstitial);
-											setRewardedUnit(ADMOB_PRODUCTION_CREDENTIALS.rewarded);
-											onToast("Filled Spider Esports Production AdMob IDs.");
-										},
-										className: "min-h-[38px] px-3.5 py-1.5 rounded-lg border border-[#E11D48]/50 bg-[#E11D48]/15 hover:bg-[#E11D48]/25 text-xs font-semibold text-white",
-										children: [
-											"Fill Production IDs (",
-											ADMOB_PRODUCTION_CREDENTIALS.publisherId,
-											")"
-										]
-									})]
-								})]
-							}),
-							adMobError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
+								className: "font-display text-xl font-bold text-white flex items-center gap-2",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(QrCode, { className: "w-5 h-5 text-emerald-400" }), "Payment QR Code & Add Coin Settings"]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								className: "text-xs text-zinc-400 mt-0.5",
+								children: "Upload your PhonePe / GPay / Paytm / Bank UPI QR code file here. Players see this QR in Wallet → Add Coins (₹1 = 1 Coin) and verify payments with their 12-digit UTR."
+							})] }),
+							qrSettingsError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 								role: "alert",
 								className: "rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200",
-								children: adMobError
+								children: qrSettingsError
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "grid grid-cols-1 lg:grid-cols-2 gap-3",
+								className: "grid grid-cols-1 md:grid-cols-12 gap-5 items-start",
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "rounded-lg border border-white/10 bg-[#09090B] p-3.5 space-y-2.5 text-xs tabular-nums",
+									className: "md:col-span-5 rounded-xl border border-white/10 bg-[#09090B] p-4 space-y-3",
 									children: [
 										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-											className: "flex items-center justify-between gap-2 border-b border-white/10 pb-2",
+											className: "flex items-center justify-between text-xs",
 											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 												className: "font-semibold text-white",
-												children: "Web / PWA Preview Status"
-											}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-												className: "text-[11px] font-medium text-amber-300 capitalize",
-												children: adMobStatus.webPwa.status
-											})]
-										}),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-											className: "grid grid-cols-3 gap-2",
-											children: [
-												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-													className: "text-[11px] text-zinc-400",
-													children: "Banner Slot"
-												}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-													className: "font-semibold text-zinc-100 capitalize mt-0.5",
-													children: adMobStatus.webPwa.banner
-												})] }),
-												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-													className: "text-[11px] text-zinc-400",
-													children: "Interstitial"
-												}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-													className: "font-semibold text-zinc-300 mt-0.5",
-													children: adMobStatus.webPwa.interstitial
-												})] }),
-												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-													className: "text-[11px] text-zinc-400",
-													children: "Rewarded"
-												}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-													className: "font-semibold text-zinc-300 mt-0.5",
-													children: adMobStatus.webPwa.rewarded
-												})] })
-											]
-										}),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-											className: "text-[11px] text-zinc-400 leading-relaxed",
-											children: adMobStatus.webPwa.message
-										})
-									]
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "rounded-lg border border-white/10 bg-[#09090B] p-3.5 space-y-2.5 text-xs tabular-nums",
-									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-											className: "flex items-center justify-between gap-2 border-b border-white/10 pb-2",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-												className: "font-semibold text-white",
-												children: "Android Native SDK Status"
-											}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-												className: "text-[11px] font-medium text-zinc-300",
+												children: "Your UPI Payment QR"
+											}), paymentQrDataUrl && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+												className: "text-[11px] text-emerald-300 font-mono-tabular",
 												children: [
-													adMobStatus.android.isTestMode ? "Test Mode" : "Production",
-													" ·",
-													" ",
-													/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-														className: "capitalize text-white",
-														children: adMobStatus.android.sdkState
-													})
+													"~",
+													estimateDataUrlSizeKb(paymentQrDataUrl),
+													" KB"
 												]
 											})]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-											className: "grid grid-cols-2 sm:grid-cols-4 gap-2",
-											children: [
-												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-													className: "text-[11px] text-zinc-400",
-													children: "UMP Consent"
-												}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-													className: "font-semibold text-white mt-0.5",
-													children: [
-														adMobStatus.android.consentStatus,
-														" ",
-														adMobStatus.android.canRequestAds ? "(OK)" : "(Pending)"
-													]
-												})] }),
-												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-													className: "text-[11px] text-zinc-400",
-													children: "Banner State"
-												}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-													className: `font-semibold capitalize mt-0.5 ${adMobStatus.android.bannerState === "loaded" || adMobStatus.android.bannerState === "displayed" ? "text-emerald-300" : adMobStatus.android.bannerState === "failed" ? "text-rose-300" : "text-zinc-200"}`,
-													children: adMobStatus.android.bannerState
-												})] }),
-												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-													className: "text-[11px] text-zinc-400",
-													children: "Interstitial"
-												}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-													className: `font-semibold capitalize mt-0.5 ${adMobStatus.android.interstitialState === "loaded" || adMobStatus.android.interstitialState === "displayed" ? "text-emerald-300" : adMobStatus.android.interstitialState === "failed" ? "text-rose-300" : "text-zinc-200"}`,
-													children: adMobStatus.android.interstitialState
-												})] }),
-												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-													className: "text-[11px] text-zinc-400",
-													children: "Rewarded"
-												}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-													className: `font-semibold capitalize mt-0.5 ${adMobStatus.android.rewardedState === "loaded" || adMobStatus.android.rewardedState === "displayed" ? "text-emerald-300" : adMobStatus.android.rewardedState === "failed" ? "text-rose-300" : "text-zinc-200"}`,
-													children: adMobStatus.android.rewardedState
-												})] })
-											]
+										paymentQrDataUrl ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "bg-white p-3 rounded-xl border border-white/20 flex items-center justify-center",
+											children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
+												src: paymentQrDataUrl,
+												alt: "Uploaded Payment QR preview",
+												className: "w-48 h-48 object-contain"
+											})
+										}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "h-48 rounded-xl border border-dashed border-white/15 bg-[#121216] flex flex-col items-center justify-center text-center p-4 text-xs text-zinc-400 gap-2",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(QrCode, { className: "w-8 h-8 text-zinc-500" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "No Payment QR uploaded yet" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-											className: "text-[11px] text-zinc-400 leading-relaxed",
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "flex flex-wrap items-center gap-2",
 											children: [
-												"Format states stay ",
-												/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-													className: "text-zinc-200 font-medium",
-													children: "idle"
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+													htmlFor: "adm-qr-file-input",
+													className: `flex-1 min-h-[42px] px-3 py-2 rounded-lg border border-dashed border-emerald-500/60 bg-[#121216] hover:bg-[#18181D] text-xs font-semibold text-white flex items-center justify-center gap-2 cursor-pointer transition-colors ${uploadingQr ? "opacity-60 pointer-events-none" : ""}`,
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Upload, { className: "w-4 h-4 text-emerald-400" }), uploadingQr ? "Processing QR..." : "Choose QR File"]
 												}),
-												" until an actual ad request succeeds (",
-												/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-													className: "text-zinc-200 font-medium",
-													children: "loaded"
+												/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+													id: "adm-qr-file-input",
+													type: "file",
+													accept: "image/png,image/jpeg,image/webp",
+													disabled: uploadingQr,
+													onChange: (e) => void handleQrFileUpload(e),
+													className: "sr-only"
 												}),
-												"); SDK init never marks ads ready."
+												paymentQrDataUrl && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+													type: "button",
+													onClick: () => setPaymentQrDataUrl(""),
+													className: "min-h-[42px] px-3 py-2 rounded-lg border border-[#E11D48]/40 text-xs font-semibold text-[#F43F5E] hover:bg-[#E11D48]/10",
+													children: "Remove QR"
+												})
 											]
 										})
 									]
-								})]
-							}),
-							(adMobStatus.android.sdkError || adMobStatus.android.bannerError || adMobStatus.android.interstitialError || adMobStatus.android.rewardedError) && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								role: "alert",
-								className: "rounded-lg border border-rose-500/35 bg-rose-500/10 p-3.5 space-y-1.5 text-xs text-rose-200",
-								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-										className: "font-semibold text-rose-100",
-										children: "AdMob SDK & Ad Loading Errors"
-									}),
-									adMobStatus.android.sdkError && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: ["SDK Init / Consent: ", adMobStatus.android.sdkError] }),
-									adMobStatus.android.bannerError && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: ["Banner Load: ", adMobStatus.android.bannerError] }),
-									adMobStatus.android.interstitialError && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: ["Interstitial Load/Show: ", adMobStatus.android.interstitialError] }),
-									adMobStatus.android.rewardedError && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: ["Rewarded Load/Show: ", adMobStatus.android.rewardedError] })
-								]
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "grid grid-cols-1 sm:grid-cols-3 gap-3",
-								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
-										className: "flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-[#09090B] px-3.5 py-2.5 cursor-pointer",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "block text-xs font-semibold text-white",
-											children: "Banner Ads"
-										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "block text-[11px] text-zinc-400",
-											children: "Adaptive non-overlapping footer"
-										})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-											type: "checkbox",
-											checked: bannerAdsEnabled,
-											onChange: (e) => setBannerAdsEnabled(e.target.checked),
-											className: "h-4 w-4 accent-[#E11D48]"
-										})]
-									}),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
-										className: "flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-[#09090B] px-3.5 py-2.5 cursor-pointer",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "block text-xs font-semibold text-white",
-											children: "Interstitial Ads"
-										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "block text-[11px] text-zinc-400",
-											children: "Natural breaks only"
-										})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-											type: "checkbox",
-											checked: interstitialAdsEnabled,
-											onChange: (e) => setInterstitialAdsEnabled(e.target.checked),
-											className: "h-4 w-4 accent-[#E11D48]"
-										})]
-									}),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
-										className: "flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-[#09090B] px-3.5 py-2.5 cursor-pointer",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "block text-xs font-semibold text-white",
-											children: "Rewarded Ads"
-										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "block text-[11px] text-zinc-400",
-											children: "Withdrawals & cosmetic emblem"
-										})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-											type: "checkbox",
-											checked: rewardedAdsEnabled,
-											onChange: (e) => setRewardedAdsEnabled(e.target.checked),
-											className: "h-4 w-4 accent-[#E11D48]"
-										})]
-									})
-								]
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "grid grid-cols-1 md:grid-cols-2 gap-4",
-								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
-										htmlFor: "admob-mode",
-										className: "block text-xs text-zinc-300 mb-1",
-										children: "AdMob Environment"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
-										id: "admob-mode",
-										value: adMobMode,
-										onChange: (e) => setAdMobMode(e.target.value),
-										className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-											value: "test",
-											children: "Test Mode (Enforces Official Google Test IDs)"
-										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-											value: "production",
-											children: "Production Mode (Live AdMob Unit IDs)"
-										})]
-									})] }),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
-										htmlFor: "feat-banner",
-										className: "block text-xs text-zinc-300 mb-1",
-										children: "Promotional Banner Headline"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-										id: "feat-banner",
-										type: "text",
-										value: featuredAnn,
-										onChange: (e) => setFeaturedAnn(e.target.value),
-										className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
-									})] }),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
-										htmlFor: "banner-placement",
-										className: "block text-xs text-zinc-300 mb-1",
-										children: "Banner Ad Placement Screens"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
-										id: "banner-placement",
-										value: bannerPlacement,
-										onChange: (e) => setBannerPlacement(e.target.value),
-										className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white",
-										children: [
-											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-												value: "all_screens",
-												children: "All Content Screens (Home, Matches, Results, Ranks, Profile)"
-											}),
-											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-												value: "home_and_matches",
-												children: "Home & Match Listings Only"
-											}),
-											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-												value: "home_only",
-												children: "Home Screen Only"
-											})
-										]
-									})] }),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
-										htmlFor: "interstitial-cooldown",
-										className: "block text-xs text-zinc-300 mb-1",
-										children: [
-											"Interstitial Cooldown (",
-											30,
-											"–",
-											600,
-											" seconds)"
-										]
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-										id: "interstitial-cooldown",
-										type: "number",
-										min: 30,
-										max: 600,
-										step: 5,
-										value: interstitialCooldownSeconds,
-										onChange: (e) => setInterstitialCooldownSeconds(Number(e.target.value)),
-										className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
-									})] }),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
-										htmlFor: "admob-app-id",
-										className: "block text-xs text-zinc-300 mb-1",
-										children: "AdMob App ID (~)"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-										id: "admob-app-id",
-										type: "text",
-										placeholder: "ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY",
-										value: adMobAppId,
-										onChange: (e) => setAdMobAppId(e.target.value),
-										className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-xs font-mono-tabular text-white"
-									})] }),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
-										htmlFor: "adsense-client-id",
-										className: "block text-xs text-zinc-300 mb-1",
-										children: "Web AdSense Publisher ID (Optional)"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-										id: "adsense-client-id",
-										type: "text",
-										placeholder: "ca-pub-XXXXXXXXXXXXXXXX",
-										value: adSenseClientId,
-										onChange: (e) => setAdSenseClientId(e.target.value),
-										className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-xs font-mono-tabular text-white"
-									})] }),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
-										htmlFor: "unit-banner",
-										className: "block text-xs text-zinc-300 mb-1",
-										children: "Banner Ad Unit ID (/)"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-										id: "unit-banner",
-										type: "text",
-										placeholder: "ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY",
-										value: bannerUnit,
-										onChange: (e) => setBannerUnit(e.target.value),
-										className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-xs font-mono-tabular text-white"
-									})] }),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
-										htmlFor: "unit-inter",
-										className: "block text-xs text-zinc-300 mb-1",
-										children: "Interstitial Ad Unit ID (/)"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-										id: "unit-inter",
-										type: "text",
-										placeholder: "ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY",
-										value: interstitialUnit,
-										onChange: (e) => setInterstitialUnit(e.target.value),
-										className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-xs font-mono-tabular text-white"
-									})] }),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-										className: "md:col-span-2",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
-											htmlFor: "unit-rew",
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "md:col-span-7 space-y-4",
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+											htmlFor: "qr-receiver-name",
 											className: "block text-xs text-zinc-300 mb-1",
-											children: "Rewarded Ad Unit ID (/)"
+											children: "Receiver / Display Name"
 										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-											id: "unit-rew",
+											id: "qr-receiver-name",
 											type: "text",
-											placeholder: "ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY",
-											value: rewardedUnit,
-											onChange: (e) => setRewardedUnit(e.target.value),
-											className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-xs font-mono-tabular text-white"
-										})]
-									})
-								]
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "rounded-lg border border-white/10 bg-[#09090B] p-3.5 space-y-2",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "flex flex-col sm:flex-row sm:items-center justify-between gap-2",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-										className: "text-xs font-semibold text-white",
-										children: "Play Store app-ads.txt Verification Line"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-										className: "text-[11px] text-zinc-400",
-										children: [
-											"Hosted at ",
-											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-												className: "font-mono-tabular text-zinc-300",
-												children: "/app-ads.txt"
-											}),
-											". Update",
-											" ",
-											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-												className: "font-mono-tabular text-zinc-300",
-												children: "public/app-ads.txt"
-											}),
-											" with this line before publishing live ads:"
-										]
-									})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-										type: "button",
-										onClick: () => {
-											const line = buildAppAdsTxtLine(adMobAppId || bannerUnit);
-											navigator.clipboard?.writeText(line).then(() => {
-												setCopiedAppAdsTxt(true);
-												onToast("Copied app-ads.txt verification line.");
-												window.setTimeout(() => setCopiedAppAdsTxt(false), 2500);
-											});
-										},
-										className: "min-h-[34px] px-3 rounded-lg border border-white/15 bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-white shrink-0",
-										children: copiedAppAdsTxt ? "Copied" : "Copy app-ads.txt"
-									})]
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", {
-									className: "block rounded bg-[#121216] border border-white/5 px-3 py-2 text-[11px] font-mono-tabular text-emerald-300 break-all",
-									children: buildAppAdsTxtLine(adMobAppId || bannerUnit)
+											maxLength: 80,
+											value: paymentReceiverName,
+											onChange: (e) => setPaymentReceiverName(e.target.value),
+											placeholder: "e.g. SPIDER ESPORTS Official Pay",
+											className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
+										})] }),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+											htmlFor: "qr-upi-id",
+											className: "block text-xs text-zinc-300 mb-1",
+											children: "UPI ID (Optional, shown with Copy button)"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+											id: "qr-upi-id",
+											type: "text",
+											maxLength: 100,
+											value: paymentUpiId,
+											onChange: (e) => setPaymentUpiId(e.target.value),
+											placeholder: "e.g. spideresports@okaxis",
+											className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
+										})] }),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+											htmlFor: "feat-banner",
+											className: "block text-xs text-zinc-300 mb-1",
+											children: "Promotional Banner Headline"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+											id: "feat-banner",
+											type: "text",
+											maxLength: 200,
+											value: featuredAnn,
+											onChange: (e) => setFeaturedAnn(e.target.value),
+											className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
+										})] }),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: "rounded-lg border border-white/10 bg-[#09090B] p-3 text-xs text-zinc-400",
+											children: [
+												"Wallet Economy: ",
+												/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
+													className: "text-white",
+													children: "1 Spider Coin = ₹1"
+												}),
+												" · Redemption:",
+												" ",
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("strong", {
+													className: "text-white",
+													children: [
+														"Winning Prizes Only (Min ",
+														50,
+														" Coins / ₹",
+														50,
+														")"
+													]
+												}),
+												" · Ad-Free Edition"
+											]
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "submit",
+											disabled: savingQrSettings,
+											className: "min-h-[44px] px-6 py-2 rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] disabled:opacity-50 text-xs font-semibold text-white",
+											children: savingQrSettings ? "Saving Settings..." : "Save Payment QR & Wallet Settings"
+										})
+									]
 								})]
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-								type: "submit",
-								className: "min-h-[44px] px-6 py-2 rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] text-xs font-semibold text-white",
-								children: "Save AdMob Configuration"
 							})
 						]
 					}),
+					(() => {
+						const connectedTelegram = getTelegramSupportInfo(adminSettings);
+						const livePreview = normalizeAndValidateTelegramSupport(telegramSupportUrlInput);
+						const handleSaveTelegram = async (e) => {
+							e.preventDefault();
+							setTelegramSupportError(null);
+							const validatedUrl = normalizeAndValidateTelegramSupport(telegramSupportUrlInput);
+							if (!validatedUrl.valid) {
+								setTelegramSupportError(validatedUrl.error);
+								return;
+							}
+							const validatedLabel = validateTelegramSupportLabel(telegramSupportLabelInput);
+							if (!validatedLabel.valid) {
+								setTelegramSupportError(validatedLabel.error);
+								return;
+							}
+							setSavingTelegramSupport(true);
+							try {
+								await adminUpdateSettings({
+									id: "default",
+									...adminSettings.paymentQrDataUrl?.trim() ? { paymentQrDataUrl: adminSettings.paymentQrDataUrl.trim() } : {},
+									...adminSettings.paymentUpiId?.trim() ? { paymentUpiId: adminSettings.paymentUpiId.trim() } : {},
+									...adminSettings.paymentReceiverName?.trim() ? { paymentReceiverName: adminSettings.paymentReceiverName.trim() } : {},
+									telegramSupportUrl: validatedUrl.url,
+									telegramSupportLabel: validatedLabel.label || "24/7 Telegram Support",
+									featuredAnnouncement: adminSettings.featuredAnnouncement?.trim() || "",
+									maintenanceMode: false
+								});
+								setTelegramSupportUrlInput(validatedUrl.url);
+								onToast(validatedUrl.url ? `Telegram support connected (${validatedUrl.displayHandle}).` : "Telegram support disconnected.");
+							} catch (err) {
+								const msg = err instanceof Error ? err.message : "Unable to save Telegram support link.";
+								setTelegramSupportError(msg);
+								onToast(msg);
+							} finally {
+								setSavingTelegramSupport(false);
+							}
+						};
+						const handleDisconnectTelegram = async () => {
+							setTelegramSupportError(null);
+							setSavingTelegramSupport(true);
+							try {
+								await adminUpdateSettings({
+									id: "default",
+									...adminSettings.paymentQrDataUrl?.trim() ? { paymentQrDataUrl: adminSettings.paymentQrDataUrl.trim() } : {},
+									...adminSettings.paymentUpiId?.trim() ? { paymentUpiId: adminSettings.paymentUpiId.trim() } : {},
+									...adminSettings.paymentReceiverName?.trim() ? { paymentReceiverName: adminSettings.paymentReceiverName.trim() } : {},
+									telegramSupportUrl: "",
+									telegramSupportLabel: "",
+									featuredAnnouncement: adminSettings.featuredAnnouncement?.trim() || "",
+									maintenanceMode: false
+								});
+								setTelegramSupportUrlInput("");
+								setTelegramSupportLabelInput("");
+								onToast("Telegram customer support disconnected.");
+							} catch (err) {
+								const msg = err instanceof Error ? err.message : "Unable to disconnect Telegram support.";
+								setTelegramSupportError(msg);
+								onToast(msg);
+							} finally {
+								setSavingTelegramSupport(false);
+							}
+						};
+						return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
+							onSubmit: handleSaveTelegram,
+							className: "lg:col-span-2 rounded-xl border border-white/10 bg-[#121216] p-5 space-y-4",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "flex flex-col sm:flex-row sm:items-center justify-between gap-2",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
+										className: "font-display text-xl font-bold text-white flex items-center gap-2",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(MessageCircle, { className: "w-5 h-5 text-sky-400" }), "Connect Customer Support (Telegram)"]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+										className: "text-xs text-zinc-400 mt-0.5",
+										children: "Link your Telegram username, support channel, or group invite so players can click Customer Support and report issues directly to you on Telegram."
+									})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: `text-xs font-semibold shrink-0 ${connectedTelegram.configured ? "text-emerald-400" : "text-zinc-400"}`,
+										children: connectedTelegram.configured ? `Connected · ${connectedTelegram.displayHandle}` : "Not Connected"
+									})]
+								}),
+								telegramSupportError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									role: "alert",
+									className: "rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200",
+									children: telegramSupportError
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "grid grid-cols-1 md:grid-cols-2 gap-4",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+											htmlFor: "adm-tg-url",
+											className: "block text-xs text-zinc-300 mb-1",
+											children: "Telegram @Username or t.me Link"
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+											id: "adm-tg-url",
+											type: "text",
+											maxLength: 160,
+											value: telegramSupportUrlInput,
+											onChange: (e) => setTelegramSupportUrlInput(e.target.value),
+											placeholder: "e.g. @spider_support or https://t.me/spider_support",
+											className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
+										}),
+										telegramSupportUrlInput.trim() && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+											className: `text-[11px] mt-1 ${livePreview.valid ? "text-emerald-300" : "text-rose-300"}`,
+											children: livePreview.valid ? `Resolves to: ${livePreview.url}` : livePreview.error
+										})
+									] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+											htmlFor: "adm-tg-label",
+											className: "block text-xs text-zinc-300 mb-1",
+											children: "Support Banner Text (Optional)"
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+											id: "adm-tg-label",
+											type: "text",
+											maxLength: 80,
+											value: telegramSupportLabelInput,
+											onChange: (e) => setTelegramSupportLabelInput(e.target.value),
+											placeholder: "24/7 Telegram Support",
+											className: "w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+											className: "text-[11px] text-zinc-500 mt-1",
+											children: "Shown on the Home 24/7 floating support card and Profile support link."
+										})
+									] })]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "flex flex-wrap items-center gap-3",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+										type: "submit",
+										disabled: savingTelegramSupport,
+										className: "min-h-[44px] px-6 py-2 rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] disabled:opacity-50 text-xs font-semibold text-white inline-flex items-center gap-2",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Send, { className: "w-3.5 h-3.5" }), savingTelegramSupport ? "Saving..." : "Save & Connect Telegram"]
+									}), connectedTelegram.configured && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("a", {
+										href: connectedTelegram.url,
+										target: "_blank",
+										rel: "noopener noreferrer",
+										className: "min-h-[44px] px-4 py-2 rounded-lg border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 text-xs font-semibold text-sky-300 inline-flex items-center gap-1.5",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExternalLink, { className: "w-3.5 h-3.5" }), "Test Telegram Link"]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+										type: "button",
+										disabled: savingTelegramSupport,
+										onClick: () => void handleDisconnectTelegram(),
+										className: "min-h-[44px] px-4 py-2 rounded-lg border border-white/15 hover:bg-white/5 text-xs font-semibold text-zinc-300",
+										children: "Disconnect"
+									})] })]
+								})
+							]
+						});
+					})(),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
 						onSubmit: async (e) => {
 							e.preventDefault();
@@ -60140,7 +59380,7 @@ function AdminDashboard({ adminUid, adminEmail, adminEmailVerified, signInProvid
 	});
 }
 // src/components/MatchDetailsModal.tsx
-function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn, isEmailVerified, isAdmin, adminSettings, consentAccepted, onAfterJoinConfirmation, onClose, onRequireAuth, onSuccessToast }) {
+function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn, isEmailVerified, isAdmin, onClose, onRequireAuth, onSuccessToast }) {
 	const [registrations, setRegistrations] = (0, import_react.useState)([]);
 	const [freeFireIgn, setFreeFireIgn] = (0, import_react.useState)("");
 	const [freeFireUid, setFreeFireUid] = (0, import_react.useState)("");
@@ -60165,14 +59405,8 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 		const unsub = subscribeTournamentRegistrations(tournament.id, (items) => {
 			setRegistrations(items);
 		});
-		preloadInterstitialAd(adminSettings, consentAccepted);
 		return () => unsub();
-	}, [
-		tournament?.id,
-		profile,
-		adminSettings,
-		consentAccepted
-	]);
+	}, [tournament?.id, profile]);
 	const myRegistration = profile ? registrations.find((r) => r.userId === profile.uid && r.status === "confirmed") : void 0;
 	(0, import_react.useEffect)(() => {
 		if (myRegistration && justJoined?.tournamentId === myRegistration.tournamentId) setJustJoined(null);
@@ -60208,13 +59442,16 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 	const displayFilledSlots = Math.min(tournament.maxSlots, Math.max(tournament.filledSlots, optimisticJoined ? optimisticJoined.nextFilledSlots : 0));
 	const availableSlots = Math.max(0, tournament.maxSlots - displayFilledSlots);
 	const fallbackBanner = tournament.category === "Clash Squad" ? BRAND_ASSETS.clashSquadBanner : tournament.category === "Lone Wolf" ? BRAND_ASSETS.loneWolfBanner : BRAND_ASSETS.battleRoyaleBanner;
+	const entryFee = getTournamentEntryFee(tournament);
+	const entryFeeText = formatEntryFeeLabel(entryFee);
 	const joinEligibility = canJoinTournament({
 		tournament: {
 			...tournament,
 			filledSlots: displayFilledSlots
 		},
 		alreadyRegistered: effectiveRegistered,
-		userSuspended: Boolean(profile?.suspended)
+		userSuspended: Boolean(profile?.suspended),
+		userCoins: profile?.coins
 	});
 	const cancelEligibility = canCancelRegistration({
 		tournament,
@@ -60256,8 +59493,7 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 				freeFireIgn: freeFireIgn.trim(),
 				freeFireUid: freeFireUid.trim()
 			});
-			onSuccessToast(`Joined ${tournament.title}! Slot #${res.slotNumber} confirmed.`);
-			onAfterJoinConfirmation?.();
+			onSuccessToast(res.entryFeePaid > 0 ? `Joined ${tournament.title}! Slot #${res.slotNumber} confirmed (${res.entryFeePaid.toLocaleString()} Coins deducted).` : `Joined ${tournament.title}! Slot #${res.slotNumber} confirmed.`);
 		} catch (err) {
 			setFormError(err instanceof Error ? err.message : "Unable to complete registration.");
 		} finally {
@@ -60269,12 +59505,12 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 		setSubmitting(true);
 		setFormError(null);
 		try {
-			await cancelTournamentRegistration({
+			const res = await cancelTournamentRegistration({
 				tournament,
 				profile
 			});
 			setJustJoined(null);
-			onSuccessToast("Registration cancelled and slot released.");
+			onSuccessToast(res.refundedCoins > 0 ? `Registration cancelled, ${res.refundedCoins.toLocaleString()} Coins refunded, and slot released.` : "Registration cancelled and slot released.");
 		} catch (err) {
 			setFormError(err instanceof Error ? err.message : "Unable to cancel registration.");
 		} finally {
@@ -60320,7 +59556,10 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 									"aria-hidden": "true",
 									children: "·"
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "FREE ENTRY" })
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: entryFee > 0 ? "text-amber-300 font-semibold" : "text-emerald-400 font-semibold",
+									children: entryFee > 0 ? `Entry: ${entryFeeText}` : "FREE ENTRY"
+								})
 							]
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", {
 							className: "font-display text-2xl sm:text-3xl font-extrabold text-white",
@@ -60355,7 +59594,7 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 					]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "grid grid-cols-2 sm:grid-cols-4 gap-4 rounded-xl bg-[#09090B] border border-white/10 p-4 text-xs tabular-nums",
+					className: "grid grid-cols-2 sm:grid-cols-5 gap-4 rounded-xl bg-[#09090B] border border-white/10 p-4 text-xs tabular-nums",
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "text-zinc-400",
@@ -60387,7 +59626,14 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 						})] }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "text-zinc-400",
-							children: "Match Reward"
+							children: "Entry Fee"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: `font-semibold mt-1 ${entryFee > 0 ? "text-amber-300" : "text-emerald-400"}`,
+							children: entryFee > 0 ? entryFeeText : "FREE (0 Coins)"
+						})] }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: "text-zinc-400",
+							children: "Prize Pool"
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
 							className: "text-amber-400 font-semibold mt-1",
 							children: [
@@ -60510,7 +59756,7 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 						className: "rounded-xl border border-white/10 bg-[#09090B] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "text-xs text-zinc-300",
-							children: "Sign in with your verified SPIDER ESPORTS account to reserve a free tournament slot."
+							children: "Sign in with your verified SPIDER ESPORTS account to reserve your tournament slot."
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 							type: "button",
 							onClick: onRequireAuth,
@@ -60553,6 +59799,23 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 									className: "w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#121216] text-sm font-mono-tabular text-white focus:outline-none focus:border-[#E11D48]"
 								})] })]
 							}),
+							entryFee > 0 && profile && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "rounded-lg border border-amber-500/25 bg-amber-950/15 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs tabular-nums",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+									className: "text-amber-200",
+									children: [
+										"Entry Fee: ",
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: entryFeeText }),
+										" (deducted from added coins first)"
+									]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+									className: "text-zinc-300",
+									children: ["Wallet: ", /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("strong", {
+										className: "text-white",
+										children: [profile.coins.toLocaleString(), " Coins"]
+									})]
+								})]
+							}),
 							formError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 								role: "alert",
 								className: "text-xs text-[#F43F5E] font-medium",
@@ -60562,7 +59825,7 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 								type: "submit",
 								disabled: submitting,
 								className: "w-full min-h-[48px] px-5 py-3 rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] disabled:opacity-50 text-sm font-semibold text-white transition-colors",
-								children: submitting ? "Confirming Slot..." : "Confirm Free Entry"
+								children: submitting ? "Confirming Slot..." : entryFee > 0 ? `Pay ${entryFee.toLocaleString()} Coins & Join` : "Confirm Free Entry"
 							})
 						]
 					})]
@@ -60647,12 +59910,6 @@ function MatchDetailsModal({ tournament, matchInfo, result, profile, isSignedIn,
 							})]
 						}, reg.id))
 					})]
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AdMobBannerSlot, {
-					settings: adminSettings,
-					screen: "matches",
-					placementLabel: "Match Join & Details Sponsor",
-					consentAccepted
 				})
 			]
 		})
@@ -60840,7 +60097,7 @@ function AuthModal({ open, needsOnboardingUser, onClose, onSuccess }) {
 							checked: adConsent,
 							onChange: (e) => setAdConsent(e.target.checked),
 							className: "mt-0.5 accent-[#E11D48]"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "I accept the Privacy Policy, Terms & AdMob support notice." })]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "I accept the Privacy Policy & Terms of Service." })]
 					}),
 					error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 						className: "text-xs text-[#F43F5E]",
@@ -61065,13 +60322,12 @@ function App() {
 	const [notifications, setNotifications] = (0, import_react.useState)([]);
 	const [userRegistrations, setUserRegistrations] = (0, import_react.useState)([]);
 	const [userWithdrawals, setUserWithdrawals] = (0, import_react.useState)([]);
+	const [userDeposits, setUserDeposits] = (0, import_react.useState)([]);
 	const [adminSettings, setAdminSettings] = (0, import_react.useState)(DEFAULT_ADMIN_SETTINGS);
 	const [selectedTournamentId, setSelectedTournamentId] = (0, import_react.useState)(null);
 	const [authModalOpen, setAuthModalOpen] = (0, import_react.useState)(false);
 	const [notificationsOpen, setNotificationsOpen] = (0, import_react.useState)(false);
 	const [toast, setToast] = (0, import_react.useState)(null);
-	const [consentAccepted, setConsentAccepted] = (0, import_react.useState)(() => readGlobalAdConsent().personalizedAdsEnabled);
-	const [lastInterstitialAt, setLastInterstitialAt] = (0, import_react.useState)(0);
 	const showToast = (msg) => {
 		setToast(msg);
 		window.setTimeout(() => {
@@ -61097,6 +60353,7 @@ function App() {
 				setProfileLoaded(false);
 				setUserRegistrations([]);
 				setUserWithdrawals([]);
+				setUserDeposits([]);
 			}
 		});
 		return () => unsub();
@@ -61184,11 +60441,13 @@ function App() {
 		const unsubReg = subscribeUserRegistrations(authUser.uid, setUserRegistrations);
 		const unsubNotif = subscribeNotifications(authUser.uid, setNotifications);
 		const unsubWd = subscribeUserWithdrawals(authUser.uid, setUserWithdrawals);
+		const unsubDep = subscribeUserCoinDeposits(authUser.uid, setUserDeposits);
 		return () => {
 			unsubP();
 			unsubReg();
 			unsubNotif();
 			unsubWd();
+			unsubDep();
 		};
 	}, [authUser]);
 	const displayTournaments = tournaments.length > 0 ? tournaments : SEED_TOURNAMENTS;
@@ -61202,68 +60461,8 @@ function App() {
 	const unreadCount = (0, import_react.useMemo)(() => notifications.filter((n) => !n.read).length, [notifications]);
 	const selectedTournament = (0, import_react.useMemo)(() => displayTournaments.find((t) => t.id === selectedTournamentId) || null, [displayTournaments, selectedTournamentId]);
 	const needsOnboardingUser = authUser && authUser.emailVerified && profileLoaded && !profile ? authUser : null;
-	const adminSettingsRef = (0, import_react.useRef)(adminSettings);
-	const activeTabRef = (0, import_react.useRef)(activeTab);
-	const consentRef = (0, import_react.useRef)(consentAccepted);
-	adminSettingsRef.current = adminSettings;
-	activeTabRef.current = activeTab;
-	consentRef.current = consentAccepted;
-	const updateConsentPreference = (accepted) => {
-		setConsentAccepted(accepted);
-		writeGlobalAdConsent(accepted);
-	};
-	(0, import_react.useEffect)(() => {
-		const handleStorageSync = (e) => {
-			if (e.key === "spider_ad_consent") setConsentAccepted(readGlobalAdConsent().personalizedAdsEnabled);
-		};
-		const handleCustomSync = () => {
-			setConsentAccepted(readGlobalAdConsent().personalizedAdsEnabled);
-		};
-		window.addEventListener("storage", handleStorageSync);
-		window.addEventListener(SPIDER_AD_CONSENT_EVENT, handleCustomSync);
-		return () => {
-			window.removeEventListener("storage", handleStorageSync);
-			window.removeEventListener(SPIDER_AD_CONSENT_EVENT, handleCustomSync);
-		};
-	}, []);
-	(0, import_react.useEffect)(() => {
-		initializeAdMobRuntime(adminSettings, consentAccepted).then(() => syncBannerForScreen(adminSettings, activeTab, consentAccepted));
-	}, [adminSettings, consentAccepted]);
-	(0, import_react.useEffect)(() => {
-		syncBannerForScreen(adminSettings, activeTab, consentAccepted);
-	}, [
-		activeTab,
-		adminSettings,
-		consentAccepted
-	]);
-	(0, import_react.useEffect)(() => {
-		return registerAdMobLifecycle({
-			getSettings: () => adminSettingsRef.current,
-			getScreen: () => activeTabRef.current,
-			getConsent: () => consentRef.current
-		});
-	}, []);
-	const maybeShowNaturalBreakInterstitial = (isSafeContext, isCompletedAction = false) => {
-		if (!Capacitor.isNativePlatform()) return;
-		if (!isSafeContext || authModalOpen || Boolean(needsOnboardingUser)) return;
-		const effectiveConfig = resolveEffectiveAdMobConfig(adminSettings, { forceTestMode: Boolean(false) });
-		if (!effectiveConfig.interstitialAdsEnabled) return;
-		const cooldownMs = Math.max(9e4, effectiveConfig.interstitialCooldownMs);
-		if (!isCompletedAction && lastInterstitialAt === 0) {
-			setLastInterstitialAt(Date.now());
-			return;
-		}
-		if (canShowInterstitial({
-			lastShownAtMs: lastInterstitialAt,
-			cooldownMs,
-			isLiveMatchOrJoining: !isCompletedAction && Boolean(selectedTournament && selectedTournament.status !== "completed") || authModalOpen || Boolean(needsOnboardingUser)
-		})) showNativeInterstitialAd(adminSettings, consentAccepted).then((displayed) => {
-			if (displayed) setLastInterstitialAt(Date.now());
-		}).catch(() => void 0);
-	};
 	const handleSelectTab = (nextTab) => {
 		if (nextTab === "admin" && !isAdmin) return;
-		maybeShowNaturalBreakInterstitial(nextTab !== activeTab && (nextTab === "leaderboard" || nextTab === "results") && !selectedTournamentId);
 		setActiveTab(nextTab);
 		window.scrollTo({
 			top: 0,
@@ -61280,8 +60479,9 @@ function App() {
 		if (auth.currentUser.emailVerified) showToast("Email verified! Completing profile...");
 		else showToast("Email not verified yet. Check your inbox and click the verification link.");
 	};
+	const supportInfo = getTelegramSupportInfo(adminSettings);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "min-h-screen bg-[#09090B] text-[#F4F4F5] pb-24 md:pb-12",
+		className: "min-h-screen bg-[#09090B] text-[#F4F4F5] pb-32 md:pb-24",
 		children: [
 			showSplash && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SplashScreen, { onComplete: () => setShowSplash(false) }),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TopNav, {
@@ -61362,10 +60562,8 @@ function App() {
 						results: displayResults,
 						announcements: displayAnnouncements,
 						leaderboard: displayLeaderboard,
-						registeredTournamentIds,
 						adminSettings,
-						consentAccepted,
-						onAcceptConsent: () => updateConsentPreference(true),
+						registeredTournamentIds,
 						onSelectTournament: (t) => setSelectedTournamentId(t.id),
 						onNavigateTab: handleSelectTab,
 						onOpenAuth: () => setAuthModalOpen(true),
@@ -61378,7 +60576,6 @@ function App() {
 						profile,
 						isSignedIn: Boolean(authUser),
 						registeredTournamentIds,
-						adminSettings,
 						onSelectTournament: (t) => setSelectedTournamentId(t.id),
 						onNavigateResults: () => handleSelectTab("results"),
 						onOpenAuth: () => setAuthModalOpen(true)
@@ -61389,7 +60586,6 @@ function App() {
 						registrations: userRegistrations,
 						profile,
 						currentUserId: authUser?.uid,
-						adminSettings,
 						onSelectTournament: (t) => setSelectedTournamentId(t.id),
 						onOpenAuth: () => setAuthModalOpen(true)
 					}),
@@ -61397,7 +60593,6 @@ function App() {
 						entries: displayLeaderboard,
 						results: displayResults,
 						currentUserId: authUser?.uid,
-						adminSettings,
 						onNavigateResults: () => handleSelectTab("results")
 					}),
 					activeTab === "profile" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProfileView, {
@@ -61408,12 +60603,11 @@ function App() {
 						signInProvider,
 						registrations: userRegistrations,
 						withdrawals: userWithdrawals,
+						deposits: userDeposits,
 						tournaments: displayTournaments,
 						results: displayResults,
 						leaderboard: displayLeaderboard,
 						adminSettings,
-						consentAccepted,
-						onUpdateConsent: updateConsentPreference,
 						onOpenAuth: () => setAuthModalOpen(true),
 						onNavigateResults: () => handleSelectTab("results"),
 						onSelectTournament: (t) => setSelectedTournamentId(t.id),
@@ -61432,9 +60626,20 @@ function App() {
 					})
 				] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("footer", {
 					className: "mt-12 pt-6 border-t border-white/10 text-xs text-zinc-500 flex flex-col sm:flex-row sm:items-center justify-between gap-2",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "SPIDER ESPORTS is an independent community tournament platform. It is not affiliated with, endorsed by, or sponsored by Garena or Free Fire." }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-						className: "shrink-0",
-						children: "100% Free Entry · 100 Coins = ₹10"
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "SPIDER ESPORTS is an independent community tournament platform. It is not affiliated with, endorsed by, or sponsored by Garena or Free Fire." }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flex flex-wrap items-center gap-3 shrink-0",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "1 Coin = ₹1 · Winning Prizes Redeemable (Min ₹50)" }), supportInfo.configured ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("a", {
+							href: supportInfo.url,
+							target: "_blank",
+							rel: "noopener noreferrer",
+							className: "text-sky-400 hover:text-sky-300 font-semibold underline underline-offset-2",
+							children: "Customer Support (Telegram)"
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							onClick: () => showToast("Telegram support link is being connected by the admin. Please check back shortly."),
+							className: "text-sky-400 hover:text-sky-300 font-semibold underline underline-offset-2",
+							children: "Customer Support"
+						})]
 					})]
 				})]
 			}),
@@ -61451,14 +60656,7 @@ function App() {
 				isSignedIn: Boolean(authUser),
 				isEmailVerified: Boolean(authUser?.emailVerified),
 				isAdmin,
-				adminSettings,
-				consentAccepted,
-				onAfterJoinConfirmation: () => maybeShowNaturalBreakInterstitial(true, true),
-				onClose: () => {
-					const closingCompletedMatch = selectedTournament?.status === "completed";
-					setSelectedTournamentId(null);
-					if (closingCompletedMatch) maybeShowNaturalBreakInterstitial(true);
-				},
+				onClose: () => setSelectedTournamentId(null),
 				onRequireAuth: () => {
 					setSelectedTournamentId(null);
 					setAuthModalOpen(true);
@@ -61488,4 +60686,3 @@ function App() {
 }
 // src/main.tsx
 (0, import_client.createRoot)(document.getElementById("root")).render(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(App, {}));
-export { WebPlugin as n, AdmobConsentStatus as t };

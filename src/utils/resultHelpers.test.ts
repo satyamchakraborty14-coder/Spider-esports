@@ -23,6 +23,7 @@ const sampleTournament: Tournament = {
   featured: false,
   published: true,
   rules: [],
+  entryFeeCoins: 0,
   coinReward: 500,
   perKillCoins: 15,
   createdBy: 'admin',

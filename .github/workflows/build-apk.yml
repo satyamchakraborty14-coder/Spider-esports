@@ -1,0 +1,92 @@
+name: Build SPIDER ESPORTS Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Sync Capacitor Android project
+        run: npx cap sync android
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x android/gradlew
+
+      - name: Build Debug APK (directly installable)
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Build Release APK
+        working-directory: android
+        run: ./gradlew assembleRelease
+
+      - name: Prepare APK files
+        run: |
+          mkdir -p apk-output
+          cp android/app/build/outputs/apk/debug/app-debug.apk apk-output/SPIDER-ESPORTS-debug.apk
+          if [ -f android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release-unsigned.apk apk-output/SPIDER-ESPORTS-release-unsigned.apk
+          fi
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ] && [ -f apk-output/SPIDER-ESPORTS-release-unsigned.apk ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+            BUILD_TOOLS_DIR=$(ls -d "${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools/"* | sort -V | tail -n 1)
+            "$BUILD_TOOLS_DIR/zipalign" -v -p 4 apk-output/SPIDER-ESPORTS-release-unsigned.apk apk-output/SPIDER-ESPORTS-aligned.apk
+            "$BUILD_TOOLS_DIR/apksigner" sign \
+              --ks release.keystore \
+              --ks-key-alias "${{ secrets.ANDROID_KEY_ALIAS }}" \
+              --ks-pass "pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+              --key-pass "pass:${{ secrets.ANDROID_KEY_PASSWORD }}" \
+              --out apk-output/SPIDER-ESPORTS-release-signed.apk \
+              apk-output/SPIDER-ESPORTS-aligned.apk
+            rm -f release.keystore apk-output/SPIDER-ESPORTS-aligned.apk
+          fi
+
+      - name: Upload APK build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spider-esports-apk
+          path: apk-output/*.apk
+
+      - name: Publish downloadable GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: SPIDER ESPORTS v1.0.${{ github.run_number }}
+          body: |
+            Automated Android APK build for **SPIDER ESPORTS**.
+            - Download `SPIDER-ESPORTS-release-signed.apk` if present, or `SPIDER-ESPORTS-debug.apk` to install directly on Android devices.
+          files: apk-output/*.apk

@@ -156,3 +156,59 @@ export async function compressImageFileToDataUrl(
     decoded.cleanup();
   }
 }
+
+export async function compressQrImageFileToDataUrl(
+  file: File
+): Promise<CompressedBannerResult> {
+  const validationError = validateUploadImageFile(file);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const decoded = await decodeImageSource(file);
+  try {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Browser canvas unavailable for QR image processing.');
+    }
+
+    const squareSizes = [640, 480, 360];
+    for (const side of squareSizes) {
+      const fitted = fitImageDimensions(decoded.width, decoded.height, side, side);
+      canvas.width = fitted.width;
+      canvas.height = fitted.height;
+      // Crisp white backing ensures transparent PNG QR codes stay scannable on dark UI
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, fitted.width, fitted.height);
+      decoded.draw(ctx, fitted.width, fitted.height);
+
+      const pngUrl = canvas.toDataURL('image/png');
+      if (pngUrl.length <= TARGET_COMPRESSED_DATA_URL_LENGTH) {
+        return {
+          dataUrl: pngUrl,
+          width: fitted.width,
+          height: fitted.height,
+          approxKb: estimateDataUrlSizeKb(pngUrl),
+        };
+      }
+
+      for (const quality of [0.92, 0.84, 0.72]) {
+        const jpegUrl = canvas.toDataURL('image/jpeg', quality);
+        if (jpegUrl.length <= TARGET_COMPRESSED_DATA_URL_LENGTH) {
+          return {
+            dataUrl: jpegUrl,
+            width: fitted.width,
+            height: fitted.height,
+            approxKb: estimateDataUrlSizeKb(jpegUrl),
+          };
+        }
+      }
+    }
+
+    throw new Error('QR image is still too large after compression. Try a cropped QR image.');
+  } finally {
+    decoded.cleanup();
+  }
+}
+

@@ -6,7 +6,6 @@ import type {
   Tournament,
   TournamentResult,
 } from '../types/esports';
-import { ADMOB_PRODUCTION_CREDENTIALS } from '../utils/admobHelpers';
 
 import logoFfImg from '../assets/images/spider_esports_logo_ff.png';
 import battleRoyaleBannerImg from '../assets/images/hero_arena_banner_1794723403097.jpg';
@@ -61,13 +60,6 @@ export const MATCH_BANNER_PRESETS: { id: string; label: string; url: string }[] 
   },
 ];
 
-export const ADMOB_TEST_UNITS = {
-  appId: 'ca-app-pub-3940256099942544~3347511713',
-  banner: 'ca-app-pub-3940256099942544/6300978111',
-  interstitial: 'ca-app-pub-3940256099942544/1033173712',
-  rewarded: 'ca-app-pub-3940256099942544/5224354917',
-};
-
 const today = new Date();
 const todayStr = today.toISOString().slice(0, 10);
 const tomorrow = new Date(today.getTime() + 86_400_000);
@@ -96,11 +88,12 @@ export const SEED_TOURNAMENTS: Tournament[] = [
     featured: true,
     published: true,
     rules: [
-      'Free entry community event — zero entry fees.',
+      'Free entry community event — 0 Spider Coins entry fee.',
       'Mobile devices only; emulators and third-party scripts are strictly banned.',
       'All 4 squad members must join the custom room 10 minutes before match time.',
       'Win Bonus + 15 Spider Coins per verified elimination credited by admin.',
     ],
+    entryFeeCoins: 0,
     coinReward: 500,
     perKillCoins: 15,
     createdBy: 'system',
@@ -128,6 +121,7 @@ export const SEED_TOURNAMENTS: Tournament[] = [
       'No grenade spamming or roof glitching.',
       'Room credentials visible exclusively to registered team captains.',
     ],
+    entryFeeCoins: 0,
     coinReward: 400,
     perKillCoins: 10,
     createdBy: 'system',
@@ -155,6 +149,7 @@ export const SEED_TOURNAMENTS: Tournament[] = [
       'Desert Eagle & Woodpecker rounds permitted.',
       'Single elimination; report screenshots if opponent disconnects.',
     ],
+    entryFeeCoins: 0,
     coinReward: 250,
     perKillCoins: 10,
     createdBy: 'system',
@@ -182,6 +177,7 @@ export const SEED_TOURNAMENTS: Tournament[] = [
       'Teaming in Solo rooms leads to permanent account suspension.',
       'Kills and Booyah verified by Spider Esports marshals.',
     ],
+    entryFeeCoins: 0,
     coinReward: 350,
     perKillCoins: 20,
     createdBy: 'system',
@@ -208,6 +204,7 @@ export const SEED_TOURNAMENTS: Tournament[] = [
       'Register both Captain and Partner Free Fire UIDs.',
       'Both duo players must occupy the assigned slot number in room.',
     ],
+    entryFeeCoins: 0,
     coinReward: 400,
     perKillCoins: 15,
     createdBy: 'system',
@@ -231,6 +228,7 @@ export const SEED_TOURNAMENTS: Tournament[] = [
     featured: false,
     published: true,
     rules: ['Limited ammo off, Gloo Wall skill permitted.', 'Character skills disabled for pure gunplay.'],
+    entryFeeCoins: 0,
     coinReward: 200,
     perKillCoins: 10,
     createdBy: 'system',
@@ -254,6 +252,7 @@ export const SEED_TOURNAMENTS: Tournament[] = [
     featured: false,
     published: true,
     rules: ['2v2 tactical Clash Squad bracket.', 'No double sniper setups allowed.'],
+    entryFeeCoins: 0,
     coinReward: 300,
     perKillCoins: 10,
     createdBy: 'system',
@@ -277,6 +276,7 @@ export const SEED_TOURNAMENTS: Tournament[] = [
     featured: false,
     published: true,
     rules: ['2v2 Lone Wolf round-robin finals.'],
+    entryFeeCoins: 0,
     coinReward: 300,
     perKillCoins: 10,
     createdBy: 'system',
@@ -396,7 +396,7 @@ export const SEED_ANNOUNCEMENTS: Announcement[] = [
     id: 'ann-season-open',
     title: 'Season 04 Community Scrims Now Open',
     message:
-      'All Battle Royale, Clash Squad, and Lone Wolf rooms are 100% free to enter. Play matches, score kills, and win to earn Spider Coins (100 Coins = ₹10 payout).',
+      'Compete in Battle Royale, Clash Squad, and Lone Wolf rooms. 1 Coin = ₹1 — only winning prize coins can be redeemed (minimum withdrawal ₹50).',
     priority: 'high',
     active: true,
     createdAt: minusHours(12),
@@ -414,18 +414,12 @@ export const SEED_ANNOUNCEMENTS: Announcement[] = [
 
 export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   id: 'default',
-  adMobMode: 'production',
-  adMobAppId: ADMOB_PRODUCTION_CREDENTIALS.appId,
-  adSenseClientId: '',
-  bannerAdUnitId: ADMOB_PRODUCTION_CREDENTIALS.banner,
-  interstitialAdUnitId: ADMOB_PRODUCTION_CREDENTIALS.interstitial,
-  rewardedAdUnitId: ADMOB_PRODUCTION_CREDENTIALS.rewarded,
-  bannerAdsEnabled: true,
-  interstitialAdsEnabled: true,
-  rewardedAdsEnabled: true,
-  interstitialCooldownSeconds: 90,
-  bannerPlacement: 'all_screens',
-  featuredAnnouncement: '100% Free Free Fire Tournaments · Earn Spider Coins (100 Coins = ₹10)',
+  paymentQrDataUrl: '',
+  paymentUpiId: '',
+  paymentReceiverName: 'SPIDER ESPORTS',
+  telegramSupportUrl: '',
+  telegramSupportLabel: '24/7 Telegram Support',
+  featuredAnnouncement: 'SPIDER ESPORTS · 1 Coin = ₹1 · Winning Prizes Redeemable (Min ₹50)',
   maintenanceMode: false,
   updatedAt: minusHours(1),
 };

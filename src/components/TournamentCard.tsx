@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import { Calendar, CheckCircle2, Clock, Shield, Users } from 'lucide-react';
 import type { Tournament } from '../types/esports';
 import { BRAND_ASSETS, resolveBundledAssetUrl } from '../lib/seedData';
-import { getAvailableSlots, isTournamentFull } from '../utils/tournamentRules';
+import {
+  formatEntryFeeLabel,
+  getAvailableSlots,
+  getTournamentEntryFee,
+  isTournamentFull,
+} from '../utils/tournamentRules';
 
 interface TournamentCardProps {
   tournament: Tournament;
@@ -19,6 +24,8 @@ export function TournamentCard({ tournament, isRegistered, onSelect }: Tournamen
 
   const full = isTournamentFull(tournament);
   const available = getAvailableSlots(tournament);
+  const entryFee = getTournamentEntryFee(tournament);
+  const entryLabel = formatEntryFeeLabel(entryFee, true);
   const fillPercent = Math.min(100, Math.round((tournament.filledSlots / tournament.maxSlots) * 100));
 
   const fallbackImg =
@@ -56,9 +63,9 @@ export function TournamentCard({ tournament, isRegistered, onSelect }: Tournamen
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#121216] via-[#121216]/35 to-transparent" />
-        <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-xs">
+        <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between gap-2 text-xs">
           <span
-            className={`font-semibold inline-flex items-center gap-1 ${
+            className={`font-semibold inline-flex items-center gap-1 shrink-0 ${
               isRegistered
                 ? 'text-emerald-400'
                 : tournament.status === 'live'
@@ -71,8 +78,8 @@ export function TournamentCard({ tournament, isRegistered, onSelect }: Tournamen
             {isRegistered && <CheckCircle2 className="w-3.5 h-3.5" />}
             {isRegistered ? 'Joined' : statusLabel}
           </span>
-          <span className="text-amber-300 font-semibold tabular-nums">
-            FREE · +{tournament.coinReward.toLocaleString()} Coins
+          <span className="text-amber-300 font-semibold tabular-nums truncate">
+            {entryFee > 0 ? `Entry ${entryLabel}` : 'FREE'} · +{tournament.coinReward.toLocaleString()} Coins
           </span>
         </div>
       </div>

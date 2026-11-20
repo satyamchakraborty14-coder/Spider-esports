@@ -50,6 +50,7 @@ import {
 import type {
   AdminSettings,
   Announcement,
+  CoinDeposit,
   LeaderboardEntry,
   MatchCredential,
   MatchInfo,
@@ -67,15 +68,22 @@ import {
   COSMETIC_CATALOG,
   evaluateUnlockedAchievements,
   formatRupees,
+  getRedeemableWinningCoins,
   isCosmeticUnlocked,
   validateAdminCoinAdjustment,
   validateWithdrawalRequest,
 } from '../utils/coinSystem';
+import { verifyCoinDepositSubmission } from '../utils/coinDepositVerification';
 import {
+  calculateEntryFeeDeduction,
+  calculateEntryFeeRefund,
   isStrictSoleAdminEmail,
   isStrictSoleAdminSession,
   validateAdminPassword,
   validateAdminSlotUpdate,
+  validateCustomModeName,
+  validateEntryFeeCoins,
+  validatePrizePoolCoins,
   validateSlotAssignment,
   validateTournamentBannerUrl,
 } from '../utils/tournamentRules';
@@ -92,6 +100,10 @@ function normalizeTournament(id: string, data: Record<string, unknown>): Tournam
   return {
     ...(data as Omit<Tournament, 'id'>),
     id,
+    entryFeeCoins:
+      typeof data.entryFeeCoins === 'number' && Number.isFinite(data.entryFeeCoins)
+        ? Math.max(0, Math.floor(data.entryFeeCoins))
+        : 0,
     coinReward:
       typeof data.coinReward === 'number'
         ? data.coinReward
@@ -107,10 +119,16 @@ function normalizeTournament(id: string, data: Record<string, unknown>): Tournam
 }
 
 function normalizeUserProfile(uid: string, data: Record<string, unknown>): UserProfile {
+  const coins = typeof data.coins === 'number' ? data.coins : 0;
+  const winningCoins =
+    typeof data.winningCoins === 'number'
+      ? Math.max(0, Math.min(coins, data.winningCoins))
+      : coins;
   return {
     ...(data as Omit<UserProfile, 'uid'>),
     uid,
-    coins: typeof data.coins === 'number' ? data.coins : 0,
+    coins,
+    winningCoins,
     unlockedCosmetics: Array.isArray(data.unlockedCosmetics)
       ? (data.unlockedCosmetics as string[])
       : ['theme-obsidian', 'badge-web-striker'],
@@ -358,9 +376,17 @@ export function subscribeAnnouncements(callback: (items: Announcement[]) => void
     (snapshot) => {
       const items = snapshot.docs.map((d) => {
         const data = d.data();
+        const rawMessage = typeof data.message === 'string' ? data.message : '';
+        const normalizedMessage =
+          d.id === 'ann-season-open' &&
+          (/(1,000|1000|100)\s+Coins\s*=\s*₹?10/i.test(rawMessage) ||
+            rawMessage.includes('Add Coins via QR or earn match rewards at 1 Coin = ₹1'))
+            ? SEED_ANNOUNCEMENTS[0].message
+            : rawMessage;
         return {
           ...data,
           id: d.id,
+          message: normalizedMessage,
           createdAt: toIsoString(data.createdAt),
         } as Announcement;
       });
@@ -447,6 +473,56 @@ export function adminSubscribeWithdrawals(
     },
     (error) => {
       handleFirestoreError(error, OperationType.LIST, 'withdrawals');
+    }
+  );
+}
+
+export function subscribeUserCoinDeposits(
+  userId: string,
+  callback: (items: CoinDeposit[]) => void
+): Unsubscribe {
+  const q = query(collection(db, 'coin_deposits'), where('userId', '==', userId));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const items = snapshot.docs.map((d) => {
+        const data = d.data();
+        return {
+          ...data,
+          id: d.id,
+          createdAt: toIsoString(data.createdAt),
+          updatedAt: toIsoString(data.updatedAt),
+        } as CoinDeposit;
+      });
+      items.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+      callback(items);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, `coin_deposits?userId=${userId}`);
+    }
+  );
+}
+
+export function adminSubscribeCoinDeposits(
+  callback: (items: CoinDeposit[]) => void
+): Unsubscribe {
+  const q = query(collection(db, 'coin_deposits'), orderBy('createdAt', 'desc'));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const items = snapshot.docs.map((d) => {
+        const data = d.data();
+        return {
+          ...data,
+          id: d.id,
+          createdAt: toIsoString(data.createdAt),
+          updatedAt: toIsoString(data.updatedAt),
+        } as CoinDeposit;
+      });
+      callback(items);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'coin_deposits');
     }
   );
 }
@@ -625,6 +701,7 @@ export async function createOrCompleteUserProfile(params: {
       totalKills: 0,
       totalPoints: 0,
       coins: 0,
+      winningCoins: 0,
       unlockedCosmetics: ['theme-obsidian', 'badge-web-striker'],
       achievements: [],
       suspended: false,
@@ -705,7 +782,7 @@ export async function joinTournamentInFirestore(params: {
   profile: UserProfile;
   freeFireIgn: string;
   freeFireUid: string;
-}): Promise<{ slotNumber: number; nextFilledSlots: number }> {
+}): Promise<{ slotNumber: number; nextFilledSlots: number; entryFeePaid: number }> {
   if (!auth.currentUser || !auth.currentUser.emailVerified) {
     throw new Error('Please verify your email address in your Profile before joining tournaments.');
   }
@@ -714,13 +791,15 @@ export async function joinTournamentInFirestore(params: {
   const tRef = doc(db, 'tournaments', tournament.id);
   const regRef = doc(db, 'registrations', regId);
   const userRef = doc(db, 'users', profile.uid);
+  const lbRef = doc(db, 'leaderboards', profile.uid);
 
   try {
     const result = await runTransaction(db, async (tx) => {
-      const [tSnap, regSnap, userSnap] = await Promise.all([
+      const [tSnap, regSnap, userSnap, lbSnap] = await Promise.all([
         tx.get(tRef),
         tx.get(regRef),
         tx.get(userRef),
+        tx.get(lbRef),
       ]);
 
       if (!tSnap.exists()) {
@@ -742,10 +821,33 @@ export async function joinTournamentInFirestore(params: {
         throw new Error('You have already joined this tournament.');
       }
 
+      if (!userSnap.exists()) {
+        throw new Error('Player profile not found.');
+      }
+
       const nextFilled = currentFilled + 1;
       const assignedSlot = Math.min(liveMaxSlots, nextFilled);
 
-      const userData = userSnap.exists() ? (userSnap.data() as Record<string, unknown>) : {};
+      const userData = userSnap.data() as Record<string, unknown>;
+      const liveCoins = typeof userData.coins === 'number' ? userData.coins : profile.coins;
+      const liveWinningCoins =
+        typeof userData.winningCoins === 'number'
+          ? Math.max(0, Math.min(liveCoins, userData.winningCoins))
+          : liveCoins;
+      const liveEntryFee =
+        typeof tData.entryFeeCoins === 'number' && Number.isFinite(tData.entryFeeCoins)
+          ? Math.max(0, Math.floor(tData.entryFeeCoins))
+          : 0;
+
+      const feeDeduction = calculateEntryFeeDeduction({
+        currentCoins: liveCoins,
+        currentWinningCoins: liveWinningCoins,
+        entryFeeCoins: liveEntryFee,
+      });
+      if (!feeDeduction.valid) {
+        throw new Error(feeDeduction.error);
+      }
+
       const currentJoined =
         typeof userData.tournamentsJoined === 'number'
           ? userData.tournamentsJoined
@@ -756,7 +858,7 @@ export async function joinTournamentInFirestore(params: {
         tournamentsJoined: nextTournamentsJoined,
         totalKills: profile.totalKills,
         totalWins: profile.totalWins,
-        coins: profile.coins,
+        coins: feeDeduction.nextCoins,
         achievements: profile.achievements,
       });
       const nextCosmetics = Array.from(
@@ -781,6 +883,8 @@ export async function joinTournamentInFirestore(params: {
         freeFireIgn: freeFireIgn.trim(),
         freeFireUid: freeFireUid.trim(),
         slotNumber: assignedSlot,
+        entryFeePaid: feeDeduction.entryFeePaid,
+        entryWinningCoinsPaid: feeDeduction.winningCoinsSpent,
         status: 'confirmed',
         updatedAt: serverTimestamp(),
       };
@@ -801,24 +905,42 @@ export async function joinTournamentInFirestore(params: {
 
       tx.update(userRef, {
         tournamentsJoined: nextTournamentsJoined,
+        coins: feeDeduction.nextCoins,
+        winningCoins: feeDeduction.nextWinningCoins,
+        lastEntryTournamentId: tournament.id,
         achievements: nextAchievements,
         unlockedCosmetics: nextCosmetics,
         updatedAt: serverTimestamp(),
       });
 
+      if (feeDeduction.entryFeePaid > 0 && lbSnap.exists()) {
+        tx.update(lbRef, {
+          coins: feeDeduction.nextCoins,
+          updatedAt: serverTimestamp(),
+        });
+      }
+
       const notifId = `reg_${tournament.id}_${Date.now()}`;
+      const feeText =
+        feeDeduction.entryFeePaid > 0
+          ? ` Entry fee paid: ${feeDeduction.entryFeePaid.toLocaleString()} coins (₹${feeDeduction.entryFeePaid.toLocaleString()}).`
+          : ' Free entry.';
       tx.set(doc(db, 'notifications', notifId), {
         id: notifId,
         userId: profile.uid,
         title: 'Joined Tournament',
-        body: `Slot #${assignedSlot} confirmed for ${tournament.title} (${tournament.mode}).`,
+        body: `Slot #${assignedSlot} confirmed for ${tournament.title} (${tournament.mode}).${feeText}`,
         type: 'registration',
         tournamentId: tournament.id,
         read: false,
         createdAt: serverTimestamp(),
       });
 
-      return { slotNumber: assignedSlot, nextFilledSlots: nextFilled };
+      return {
+        slotNumber: assignedSlot,
+        nextFilledSlots: nextFilled,
+        entryFeePaid: feeDeduction.entryFeePaid,
+      };
     });
 
     return result;
@@ -833,7 +955,7 @@ export async function joinTournamentInFirestore(params: {
 export async function cancelTournamentRegistration(params: {
   tournament: Tournament;
   profile: UserProfile;
-}): Promise<void> {
+}): Promise<{ refundedCoins: number }> {
   if (!auth.currentUser || !auth.currentUser.emailVerified) {
     throw new Error('Please verify your email address before modifying tournament registrations.');
   }
@@ -841,12 +963,30 @@ export async function cancelTournamentRegistration(params: {
   const regId = `${tournament.id}_${profile.uid}`;
   const tRef = doc(db, 'tournaments', tournament.id);
   const regRef = doc(db, 'registrations', regId);
+  const userRef = doc(db, 'users', profile.uid);
+  const lbRef = doc(db, 'leaderboards', profile.uid);
+
   try {
-    await runTransaction(db, async (tx) => {
-      const [tSnap, regSnap] = await Promise.all([tx.get(tRef), tx.get(regRef)]);
+    return await runTransaction(db, async (tx) => {
+      const [tSnap, regSnap, userSnap, lbSnap] = await Promise.all([
+        tx.get(tRef),
+        tx.get(regRef),
+        tx.get(userRef),
+        tx.get(lbRef),
+      ]);
       if (!regSnap.exists() || regSnap.data().status !== 'confirmed') {
         throw new Error('No active registration found to cancel.');
       }
+      const regData = regSnap.data();
+      const entryFeePaid =
+        typeof regData.entryFeePaid === 'number' && Number.isFinite(regData.entryFeePaid)
+          ? Math.max(0, Math.floor(regData.entryFeePaid))
+          : 0;
+      const entryWinningCoinsPaid =
+        typeof regData.entryWinningCoinsPaid === 'number' && Number.isFinite(regData.entryWinningCoinsPaid)
+          ? Math.max(0, Math.floor(regData.entryWinningCoinsPaid))
+          : 0;
+
       const currentFilled =
         tSnap.exists() && typeof tSnap.data().filledSlots === 'number'
           ? tSnap.data().filledSlots
@@ -860,6 +1000,37 @@ export async function cancelTournamentRegistration(params: {
         filledSlots: Math.max(0, currentFilled - 1),
         updatedAt: serverTimestamp(),
       });
+
+      if (entryFeePaid > 0 && userSnap.exists()) {
+        const userData = userSnap.data() as Record<string, unknown>;
+        const liveCoins = typeof userData.coins === 'number' ? userData.coins : profile.coins;
+        const liveWinning =
+          typeof userData.winningCoins === 'number'
+            ? Math.max(0, Math.min(liveCoins, userData.winningCoins))
+            : liveCoins;
+        const refund = calculateEntryFeeRefund({
+          currentCoins: liveCoins,
+          currentWinningCoins: liveWinning,
+          entryFeePaid,
+          entryWinningCoinsPaid,
+        });
+
+        tx.update(userRef, {
+          coins: refund.nextCoins,
+          winningCoins: refund.nextWinningCoins,
+          lastEntryTournamentId: tournament.id,
+          updatedAt: serverTimestamp(),
+        });
+
+        if (lbSnap.exists()) {
+          tx.update(lbRef, {
+            coins: refund.nextCoins,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
+
+      return { refundedCoins: entryFeePaid };
     });
   } catch (error) {
     if (error instanceof Error && !error.message.toLowerCase().includes('permission')) {
@@ -920,38 +1091,123 @@ export async function equipCosmetic(params: {
   }
 }
 
-// Non-cash Cosmetic Unlock via verified Rewarded Ad completion (never grants coins or currency)
-export async function unlockRewardedAdCosmetic(params: {
+// Inside-Verified QR Coin Deposit (1 Rupee = 1 Spider Coin)
+export async function verifyAndAddCoinsFromQrPayment(params: {
   profile: UserProfile;
-  cosmeticId: string;
-}): Promise<{ alreadyUnlocked: boolean }> {
+  amountRupees: number;
+  utr: string;
+  payerUpi?: string;
+  screenshotUrl?: string;
+  hasPaymentQrConfigured: boolean;
+}): Promise<{ coinsAdded: number; nextBalance: number; utr: string }> {
   if (!auth.currentUser || !auth.currentUser.emailVerified) {
-    throw new Error('Please verify your email address before unlocking profile cosmetics.');
+    throw new Error('Please verify your email address before adding Spider Coins.');
   }
-  const { profile, cosmeticId } = params;
-  const item = COSMETIC_CATALOG.find((c) => c.id === cosmeticId);
-  if (!item || !item.rewardedAdUnlock) {
-    throw new Error('Selected cosmetic is not eligible for rewarded ad unlock.');
-  }
-
-  if (profile.unlockedCosmetics?.includes(cosmeticId)) {
-    return { alreadyUnlocked: true };
+  const { profile, amountRupees, utr, payerUpi, screenshotUrl, hasPaymentQrConfigured } = params;
+  if (profile.suspended) {
+    throw new Error('Suspended accounts cannot add coins.');
   }
 
-  const nextUnlocked = Array.from(new Set([...(profile.unlockedCosmetics || []), cosmeticId])).slice(0, 20);
+  const check = verifyCoinDepositSubmission({
+    amountRupees,
+    utr,
+    payerUpi,
+    screenshotUrl,
+    hasPaymentQrConfigured,
+  });
+  if (!check.valid) {
+    throw new Error(check.error);
+  }
+
+  const depositRef = doc(db, 'coin_deposits', check.utr);
+  const userRef = doc(db, 'users', profile.uid);
+  const lbRef = doc(db, 'leaderboards', profile.uid);
+  const notifId = `dep_${check.utr}`;
+
   try {
-    await updateDoc(doc(db, 'users', profile.uid), {
-      unlockedCosmetics: nextUnlocked,
-      activeBadge: cosmeticId,
-      updatedAt: serverTimestamp(),
+    return await runTransaction(db, async (tx) => {
+      const [depositSnap, userSnap, lbSnap] = await Promise.all([
+        tx.get(depositRef),
+        tx.get(userRef),
+        tx.get(lbRef),
+      ]);
+
+      if (depositSnap.exists()) {
+        throw new Error(
+          `UTR ${check.utr} has already been verified and credited. Each UPI payment reference can only be used once.`
+        );
+      }
+      if (!userSnap.exists()) {
+        throw new Error('Player profile not found.');
+      }
+
+      const rawUser = userSnap.data() as Record<string, unknown>;
+      const currentCoins = typeof rawUser.coins === 'number' ? rawUser.coins : 0;
+      const currentWinningCoins =
+        typeof rawUser.winningCoins === 'number'
+          ? Math.max(0, Math.min(currentCoins, rawUser.winningCoins))
+          : currentCoins;
+      const nextBalance = currentCoins + check.coins;
+      const nextAchievements = evaluateUnlockedAchievements({
+        tournamentsJoined: profile.tournamentsJoined,
+        totalKills: profile.totalKills,
+        totalWins: profile.totalWins,
+        coins: nextBalance,
+        achievements: profile.achievements || [],
+      });
+
+      tx.set(depositRef, {
+        id: check.utr,
+        utr: check.utr,
+        userId: profile.uid,
+        username: profile.username,
+        freeFireUid: profile.freeFireUid,
+        rupees: check.rupees,
+        coins: check.coins,
+        ...(check.payerUpi ? { payerUpi: check.payerUpi } : {}),
+        ...(check.screenshotUrl ? { screenshotUrl: check.screenshotUrl } : {}),
+        status: 'verified',
+        verificationNote: check.verificationNote,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      tx.update(userRef, {
+        coins: nextBalance,
+        winningCoins: currentWinningCoins,
+        lastDepositUtr: check.utr,
+        achievements: nextAchievements,
+        updatedAt: serverTimestamp(),
+      });
+
+      if (lbSnap.exists()) {
+        tx.update(lbRef, {
+          coins: nextBalance,
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      tx.set(doc(db, 'notifications', notifId), {
+        id: notifId,
+        userId: profile.uid,
+        title: `+${check.coins.toLocaleString()} Spider Coins Added`,
+        body: `Verified UPI payment ₹${check.rupees.toLocaleString()} (UTR: ${check.utr}). New wallet balance: ${nextBalance.toLocaleString()} coins (non-redeemable; only winning prizes can be withdrawn).`,
+        type: 'deposit',
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+
+      return { coinsAdded: check.coins, nextBalance, utr: check.utr };
     });
-    return { alreadyUnlocked: false };
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, `users/${profile.uid}`);
+    if (error instanceof Error && !error.message.toLowerCase().includes('permission')) {
+      throw error;
+    }
+    handleFirestoreError(error, OperationType.WRITE, `coin_deposits/${check.utr}`);
   }
 }
 
-// Coin Withdrawals (100 Coins = ₹10)
+// Coin Withdrawals (Winning Prize Coins Only · 1 Coin = ₹1, Min ₹50)
 export async function requestCoinWithdrawal(params: {
   profile: UserProfile;
   amountCoins: number;
@@ -966,49 +1222,90 @@ export async function requestCoinWithdrawal(params: {
     throw new Error('Suspended accounts cannot submit withdrawal requests.');
   }
 
-  const check = validateWithdrawalRequest({
+  const preCheck = validateWithdrawalRequest({
     amountCoins,
     availableCoins: profile.coins,
+    availableWinningCoins: getRedeemableWinningCoins(profile),
     method,
     destination,
   });
-  if (!check.valid) {
-    throw new Error(check.error);
+  if (!preCheck.valid) {
+    throw new Error(preCheck.error);
   }
 
   const withdrawalId = `wd_${profile.uid}_${Date.now()}`;
   const notifId = `wdn_${Date.now()}`;
+  const userRef = doc(db, 'users', profile.uid);
+  const lbRef = doc(db, 'leaderboards', profile.uid);
 
   try {
-    const batch = writeBatch(db);
-    batch.update(doc(db, 'users', profile.uid), {
-      coins: profile.coins - check.coins,
-      updatedAt: serverTimestamp(),
+    await runTransaction(db, async (tx) => {
+      const [userSnap, lbSnap] = await Promise.all([tx.get(userRef), tx.get(lbRef)]);
+      if (!userSnap.exists()) {
+        throw new Error('Player profile not found.');
+      }
+
+      const freshProfile = normalizeUserProfile(
+        profile.uid,
+        userSnap.data() as Record<string, unknown>
+      );
+      if (freshProfile.suspended) {
+        throw new Error('Suspended accounts cannot submit withdrawal requests.');
+      }
+
+      const freshWinning = getRedeemableWinningCoins(freshProfile);
+      const check = validateWithdrawalRequest({
+        amountCoins,
+        availableCoins: freshProfile.coins,
+        availableWinningCoins: freshWinning,
+        method,
+        destination,
+      });
+      if (!check.valid) {
+        throw new Error(check.error);
+      }
+
+      const nextCoins = freshProfile.coins - check.coins;
+      const nextWinningCoins = freshWinning - check.coins;
+
+      tx.update(userRef, {
+        coins: nextCoins,
+        winningCoins: nextWinningCoins,
+        updatedAt: serverTimestamp(),
+      });
+      if (lbSnap.exists()) {
+        tx.update(lbRef, {
+          coins: nextCoins,
+          updatedAt: serverTimestamp(),
+        });
+      }
+      tx.set(doc(db, 'withdrawals', withdrawalId), {
+        id: withdrawalId,
+        userId: profile.uid,
+        username: profile.username,
+        freeFireUid: profile.freeFireUid,
+        coins: check.coins,
+        rupees: check.rupees,
+        method,
+        destination: check.destination,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      tx.set(doc(db, 'notifications', notifId), {
+        id: notifId,
+        userId: profile.uid,
+        title: 'Withdrawal Request Submitted',
+        body: `Requested ${formatRupees(check.rupees)} from winning prizes (${check.coins.toLocaleString()} winning coins) via ${method.toUpperCase()}.`,
+        type: 'withdrawal',
+        read: false,
+        createdAt: serverTimestamp(),
+      });
     });
-    batch.set(doc(db, 'withdrawals', withdrawalId), {
-      id: withdrawalId,
-      userId: profile.uid,
-      username: profile.username,
-      freeFireUid: profile.freeFireUid,
-      coins: check.coins,
-      rupees: check.rupees,
-      method,
-      destination: check.destination,
-      status: 'pending',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    batch.set(doc(db, 'notifications', notifId), {
-      id: notifId,
-      userId: profile.uid,
-      title: 'Withdrawal Request Submitted',
-      body: `Requested ${formatRupees(check.rupees)} for ${check.coins.toLocaleString()} coins via ${method.toUpperCase()}.`,
-      type: 'withdrawal',
-      read: false,
-      createdAt: serverTimestamp(),
-    });
-    await batch.commit();
   } catch (error) {
+    if (error instanceof Error && !error.message.toLowerCase().includes('permission')) {
+      throw error;
+    }
     handleFirestoreError(error, OperationType.WRITE, `withdrawals/${withdrawalId}`);
   }
 }
@@ -1031,8 +1328,14 @@ export async function adminMigrateLegacyDocs(): Promise<void> {
     const tourneySnap = await getDocs(collection(db, 'tournaments'));
     for (const d of tourneySnap.docs) {
       const data = d.data();
-      if ('xpReward' in data || typeof data.coinReward !== 'number' || typeof data.perKillCoins !== 'number') {
+      if (
+        'xpReward' in data ||
+        typeof data.coinReward !== 'number' ||
+        typeof data.perKillCoins !== 'number' ||
+        typeof data.entryFeeCoins !== 'number'
+      ) {
         batch.update(d.ref, {
+          entryFeeCoins: typeof data.entryFeeCoins === 'number' ? Math.max(0, Math.floor(data.entryFeeCoins)) : 0,
           coinReward: typeof data.coinReward === 'number' ? data.coinReward : Number(data.xpReward ?? 200),
           perKillCoins: typeof data.perKillCoins === 'number' ? data.perKillCoins : 10,
           xpReward: deleteField(),
@@ -1066,6 +1369,18 @@ export async function adminMigrateLegacyDocs(): Promise<void> {
           level: deleteField(),
           cosmeticPoints: deleteField(),
           updatedAt: serverTimestamp(),
+        });
+        ops++;
+      }
+    }
+
+    const seasonAnnRef = doc(db, 'announcements', 'ann-season-open');
+    const seasonAnnSnap = await getDoc(seasonAnnRef);
+    if (seasonAnnSnap.exists()) {
+      const msg = String(seasonAnnSnap.data().message ?? '');
+      if (/(1,000|1000|100)\s+Coins\s*=\s*₹?10/i.test(msg)) {
+        batch.update(seasonAnnRef, {
+          message: SEED_ANNOUNCEMENTS[0].message,
         });
         ops++;
       }
@@ -1140,6 +1455,21 @@ export async function adminSaveTournament(
   isNew: boolean
 ): Promise<void> {
   assertSoleAdmin();
+  const modeCheck = validateCustomModeName(tournament.mode);
+  if (!modeCheck.valid) {
+    throw new Error(modeCheck.error);
+  }
+  const feeCheck = validateEntryFeeCoins(Math.floor(Number(tournament.entryFeeCoins ?? 0)));
+  if (!feeCheck.valid) {
+    throw new Error(feeCheck.error);
+  }
+  const prizeCheck = validatePrizePoolCoins(
+    Math.floor(Number(tournament.coinReward ?? 0)),
+    Math.floor(Number(tournament.perKillCoins ?? 0))
+  );
+  if (!prizeCheck.valid) {
+    throw new Error(prizeCheck.error);
+  }
   const slotCheck = validateAdminSlotUpdate(
     tournament.maxSlots,
     isNew ? 0 : tournament.filledSlots
@@ -1161,10 +1491,12 @@ export async function adminSaveTournament(
 
     const basePayload = {
       ...tournament,
+      mode: modeCheck.mode,
       bannerUrl: tournament.bannerUrl?.trim() || undefined,
       maxSlots: slotCheck.maxSlots,
-      coinReward: Math.max(0, Math.floor(tournament.coinReward)),
-      perKillCoins: Math.max(0, Math.floor(tournament.perKillCoins)),
+      entryFeeCoins: feeCheck.entryFeeCoins,
+      coinReward: prizeCheck.coinReward,
+      perKillCoins: prizeCheck.perKillCoins,
       registrationDeadline: Timestamp.fromDate(new Date(tournament.registrationDeadline)),
       credentialsReleaseAt: Timestamp.fromDate(new Date(tournament.credentialsReleaseAt)),
       updatedAt: serverTimestamp(),
@@ -1353,9 +1685,10 @@ export async function adminAdjustUserCoins(params: {
   userId: string;
   deltaCoins: number;
   reason: string;
-}): Promise<number> {
+  coinType?: 'winning' | 'bonus';
+}): Promise<{ nextCoins: number; nextWinningCoins: number }> {
   assertSoleAdmin();
-  const { userId, deltaCoins, reason } = params;
+  const { userId, deltaCoins, reason, coinType = 'winning' } = params;
 
   try {
     const userRef = doc(db, 'users', userId);
@@ -1365,9 +1698,18 @@ export async function adminAdjustUserCoins(params: {
       throw new Error('Player profile not found.');
     }
 
-    const rawUser = userSnap.data() as Record<string, unknown>;
-    const currentCoins = typeof rawUser.coins === 'number' ? rawUser.coins : 0;
-    const check = validateAdminCoinAdjustment({ currentCoins, deltaCoins });
+    const normalizedUser = normalizeUserProfile(
+      userId,
+      userSnap.data() as Record<string, unknown>
+    );
+    const currentCoins = normalizedUser.coins;
+    const currentWinningCoins = getRedeemableWinningCoins(normalizedUser);
+    const check = validateAdminCoinAdjustment({
+      currentCoins,
+      currentWinningCoins,
+      deltaCoins,
+      coinType,
+    });
     if (!check.valid) {
       throw new Error(check.error);
     }
@@ -1375,6 +1717,7 @@ export async function adminAdjustUserCoins(params: {
     const batch = writeBatch(db);
     batch.update(userRef, {
       coins: check.nextCoins,
+      winningCoins: check.nextWinningCoins,
       xp: deleteField(),
       level: deleteField(),
       cosmeticPoints: deleteField(),
@@ -1391,7 +1734,12 @@ export async function adminAdjustUserCoins(params: {
     }
 
     const notifId = `coins_${userId}_${Date.now()}`;
-    const verb = deltaCoins > 0 ? `+${deltaCoins.toLocaleString()} Spider Coins credited` : `${deltaCoins.toLocaleString()} Spider Coins adjusted`;
+    const verb =
+      deltaCoins > 0
+        ? coinType === 'winning'
+          ? `+${deltaCoins.toLocaleString()} Winning Prize Coins credited`
+          : `+${deltaCoins.toLocaleString()} Wallet Bonus Coins credited`
+        : `${deltaCoins.toLocaleString()} Spider Coins adjusted`;
     batch.set(doc(db, 'notifications', notifId), {
       id: notifId,
       userId,
@@ -1403,7 +1751,7 @@ export async function adminAdjustUserCoins(params: {
     });
 
     await batch.commit();
-    return check.nextCoins;
+    return { nextCoins: check.nextCoins, nextWinningCoins: check.nextWinningCoins };
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
   }
@@ -1518,7 +1866,9 @@ export async function adminPublishMatchResult(params: {
 
         if (userSnap.exists()) {
           const u = normalizeUserProfile(uid, userSnap.data() as Record<string, unknown>);
+          const currentWinning = getRedeemableWinningCoins(u);
           const newCoins = u.coins + awardedCoins;
+          const newWinningCoins = currentWinning + awardedCoins;
           const newWins = u.totalWins + (isChampion ? 1 : 0);
           const newKills = u.totalKills + rowKills;
           const newAchievements = evaluateUnlockedAchievements({
@@ -1548,6 +1898,7 @@ export async function adminPublishMatchResult(params: {
             totalKills: newKills,
             totalPoints: u.totalPoints,
             coins: newCoins,
+            winningCoins: newWinningCoins,
             unlockedCosmetics: newCosmetics,
             achievements: newAchievements,
             xp: deleteField(),
@@ -1605,6 +1956,7 @@ export async function adminPublishMatchResult(params: {
         batch.update(doc(db, 'users', reg.userId), {
           matchesPlayed: pProfile.matchesPlayed + 1,
           coins: nextPlayerCoins,
+          winningCoins: getRedeemableWinningCoins(pProfile),
           achievements: nextAchievements,
           xp: deleteField(),
           level: deleteField(),
@@ -1676,9 +2028,12 @@ export async function adminProcessWithdrawal(params: {
       const userSnap = await getDoc(doc(db, 'users', withdrawal.userId));
       if (userSnap.exists()) {
         const u = normalizeUserProfile(withdrawal.userId, userSnap.data() as Record<string, unknown>);
+        const currentWinning = getRedeemableWinningCoins(u);
         const refundedCoins = u.coins + withdrawal.coins;
+        const refundedWinningCoins = Math.min(refundedCoins, currentWinning + withdrawal.coins);
         batch.update(doc(db, 'users', withdrawal.userId), {
           coins: refundedCoins,
+          winningCoins: refundedWinningCoins,
           xp: deleteField(),
           level: deleteField(),
           cosmeticPoints: deleteField(),
@@ -1713,6 +2068,62 @@ export async function adminProcessWithdrawal(params: {
     await batch.commit();
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `withdrawals/${withdrawal.id}`);
+  }
+}
+
+export async function adminRejectCoinDeposit(params: {
+  deposit: CoinDeposit;
+  adminNote: string;
+}): Promise<void> {
+  assertSoleAdmin();
+  const { deposit, adminNote } = params;
+  if (deposit.status === 'rejected') {
+    throw new Error('This coin deposit has already been rejected and reversed.');
+  }
+
+  const cleanNote = adminNote.trim() || 'Payment UTR could not be verified on bank statement.';
+  try {
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'coin_deposits', deposit.id), {
+      status: 'rejected',
+      adminNote: cleanNote,
+      updatedAt: serverTimestamp(),
+    });
+
+    const userSnap = await getDoc(doc(db, 'users', deposit.userId));
+    if (userSnap.exists()) {
+      const u = normalizeUserProfile(deposit.userId, userSnap.data() as Record<string, unknown>);
+      const currentWinning = getRedeemableWinningCoins(u);
+      const nextCoins = Math.max(0, u.coins - deposit.coins);
+      const nextWinningCoins = Math.min(nextCoins, currentWinning);
+      batch.update(doc(db, 'users', deposit.userId), {
+        coins: nextCoins,
+        winningCoins: nextWinningCoins,
+        updatedAt: serverTimestamp(),
+      });
+      const lbSnap = await getDoc(doc(db, 'leaderboards', deposit.userId));
+      if (lbSnap.exists()) {
+        batch.update(doc(db, 'leaderboards', deposit.userId), {
+          coins: nextCoins,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+
+    const notifId = `dep_rej_${deposit.id}_${Date.now()}`;
+    batch.set(doc(db, 'notifications', notifId), {
+      id: notifId,
+      userId: deposit.userId,
+      title: 'Add Coin Deposit Reversed',
+      body: `Deposit of ${formatRupees(deposit.rupees)} (UTR: ${deposit.utr}) was rejected by admin (${cleanNote}). ${deposit.coins.toLocaleString()} coins deducted.`,
+      type: 'deposit',
+      read: false,
+      createdAt: serverTimestamp(),
+    });
+
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `coin_deposits/${deposit.id}`);
   }
 }
 
@@ -1812,12 +2223,60 @@ export async function adminRemoveRegistration(
 ): Promise<void> {
   assertSoleAdmin();
   try {
+    const feePaid =
+      typeof registration.entryFeePaid === 'number' && Number.isFinite(registration.entryFeePaid)
+        ? Math.max(0, Math.floor(registration.entryFeePaid))
+        : 0;
+    const winPaid =
+      typeof registration.entryWinningCoinsPaid === 'number' &&
+      Number.isFinite(registration.entryWinningCoinsPaid)
+        ? Math.max(0, Math.floor(registration.entryWinningCoinsPaid))
+        : 0;
+
     const batch = writeBatch(db);
     batch.delete(doc(db, 'registrations', registration.id));
     batch.update(doc(db, 'tournaments', tournament.id), {
       filledSlots: Math.max(0, tournament.filledSlots - 1),
       updatedAt: serverTimestamp(),
     });
+
+    if (feePaid > 0 && registration.status === 'confirmed' && tournament.status === 'upcoming') {
+      const userRef = doc(db, 'users', registration.userId);
+      const lbRef = doc(db, 'leaderboards', registration.userId);
+      const [userSnap, lbSnap] = await Promise.all([getDoc(userRef), getDoc(lbRef)]);
+      if (userSnap.exists()) {
+        const u = normalizeUserProfile(registration.userId, userSnap.data() as Record<string, unknown>);
+        const refund = calculateEntryFeeRefund({
+          currentCoins: u.coins,
+          currentWinningCoins: getRedeemableWinningCoins(u),
+          entryFeePaid: feePaid,
+          entryWinningCoinsPaid: winPaid,
+        });
+        batch.update(userRef, {
+          coins: refund.nextCoins,
+          winningCoins: refund.nextWinningCoins,
+          updatedAt: serverTimestamp(),
+        });
+        if (lbSnap.exists()) {
+          batch.update(lbRef, {
+            coins: refund.nextCoins,
+            updatedAt: serverTimestamp(),
+          });
+        }
+        const notifId = `reg_rem_${registration.tournamentId}_${Date.now()}`;
+        batch.set(doc(db, 'notifications', notifId), {
+          id: notifId,
+          userId: registration.userId,
+          title: 'Registration Removed & Entry Fee Refunded',
+          body: `Your slot in ${tournament.title} was removed by admin and ${feePaid.toLocaleString()} coins (₹${feePaid.toLocaleString()}) were refunded to your wallet.`,
+          type: 'cancellation',
+          tournamentId: tournament.id,
+          read: false,
+          createdAt: serverTimestamp(),
+        });
+      }
+    }
+
     await batch.commit();
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `registrations/${registration.id}`);

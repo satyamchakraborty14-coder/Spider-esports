@@ -1,6 +1,6 @@
-export type TournamentCategory = 'Battle Royale' | 'Clash Squad' | 'Lone Wolf';
+export type TournamentCategory = 'Battle Royale' | 'Clash Squad' | 'Lone Wolf' | 'Custom';
 
-export type TournamentMode =
+export type StandardTournamentMode =
   | 'Solo'
   | 'Duo'
   | 'Squad'
@@ -9,6 +9,8 @@ export type TournamentMode =
   | 'CS 4v4'
   | 'Lone Wolf 1v1'
   | 'Lone Wolf 2v2';
+
+export type TournamentMode = StandardTournamentMode | (string & {});
 
 export type TournamentStatus = 'draft' | 'upcoming' | 'live' | 'completed' | 'cancelled';
 
@@ -42,6 +44,7 @@ export interface Tournament {
   featured: boolean;
   published: boolean;
   rules: string[];
+  entryFeeCoins: number; // 0 = Free entry, > 0 = Entry fee in Spider Coins (1 Coin = ₹1)
   coinReward: number;
   perKillCoins: number;
   createdBy: string;
@@ -59,6 +62,8 @@ export interface Registration {
   teamName?: string;
   teammates?: TeammateInput[];
   slotNumber: number;
+  entryFeePaid?: number;
+  entryWinningCoinsPaid?: number;
   status: 'confirmed' | 'cancelled';
   createdAt: string;
   updatedAt: string;
@@ -119,6 +124,9 @@ export interface UserProfile {
   totalKills: number;
   totalPoints: number;
   coins: number;
+  winningCoins?: number;
+  lastDepositUtr?: string;
+  lastEntryTournamentId?: string;
   unlockedCosmetics: string[];
   achievements: string[];
   suspended: boolean;
@@ -160,6 +168,25 @@ export interface WithdrawalRequest {
   updatedAt: string;
 }
 
+export type CoinDepositStatus = 'verified' | 'rejected';
+
+export interface CoinDeposit {
+  id: string; // 12-digit UTR for replay prevention
+  utr: string;
+  userId: string;
+  username: string;
+  freeFireUid: string;
+  rupees: number;
+  coins: number;
+  payerUpi?: string;
+  screenshotUrl?: string;
+  status: CoinDepositStatus;
+  verificationNote: string;
+  adminNote?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface NotificationItem {
   id: string;
   userId: string; // uid or 'all'
@@ -174,6 +201,7 @@ export interface NotificationItem {
     | 'result'
     | 'achievement'
     | 'withdrawal'
+    | 'deposit'
     | 'system';
   tournamentId?: string;
   read: boolean;
@@ -189,21 +217,13 @@ export interface Announcement {
   createdAt: string;
 }
 
-export type AdBannerPlacement = 'all_screens' | 'home_and_matches' | 'home_only';
-
 export interface AdminSettings {
   id: string;
-  adMobMode: 'test' | 'production';
-  adMobAppId?: string;
-  adSenseClientId?: string;
-  bannerAdUnitId: string;
-  interstitialAdUnitId: string;
-  rewardedAdUnitId: string;
-  bannerAdsEnabled?: boolean;
-  interstitialAdsEnabled?: boolean;
-  rewardedAdsEnabled?: boolean;
-  interstitialCooldownSeconds?: number;
-  bannerPlacement?: AdBannerPlacement;
+  paymentQrDataUrl?: string;
+  paymentUpiId?: string;
+  paymentReceiverName?: string;
+  telegramSupportUrl?: string;
+  telegramSupportLabel?: string;
   featuredAnnouncement?: string;
   maintenanceMode: boolean;
   updatedAt: string;
@@ -216,7 +236,6 @@ export interface CosmeticItem {
   description: string;
   unlockMetric?: 'tournamentsJoined' | 'totalKills' | 'totalWins';
   unlockThreshold: number;
-  rewardedAdUnlock?: boolean;
   previewColor: string;
   themeId?: ProfileThemeId;
 }

@@ -39,6 +39,28 @@ service cloud.firestore {
         && request.auth.token.firebase.sign_in_provider == 'password';
     }
 
+    function getTournamentFee(tournamentId) {
+      return ('entryFeeCoins' in get(/databases/$(database)/documents/tournaments/$(tournamentId)).data)
+        ? get(/databases/$(database)/documents/tournaments/$(tournamentId)).data.entryFeeCoins
+        : 0;
+    }
+
+    function getEffectiveWinning(userData) {
+      return ('winningCoins' in userData) ? userData.winningCoins : userData.coins;
+    }
+
+    function getRegFeePaid(regId) {
+      return ('entryFeePaid' in get(/databases/$(database)/documents/registrations/$(regId)).data)
+        ? get(/databases/$(database)/documents/registrations/$(regId)).data.entryFeePaid
+        : 0;
+    }
+
+    function getRegWinPaid(regId) {
+      return ('entryWinningCoinsPaid' in get(/databases/$(database)/documents/registrations/$(regId)).data)
+        ? get(/databases/$(database)/documents/registrations/$(regId)).data.entryWinningCoinsPaid
+        : 0;
+    }
+
     // Validation Helpers
     function isValidUserProfile(data, userId) {
       return data.keys().hasAll([
@@ -50,7 +72,8 @@ service cloud.firestore {
         'uid', 'username', 'usernameLower', 'freeFireIgn', 'freeFireUid',
         'avatarUrl', 'activeTheme', 'activeBadge',
         'tournamentsJoined', 'matchesPlayed', 'totalWins', 'totalKills',
-        'totalPoints', 'coins', 'unlockedCosmetics', 'achievements',
+        'totalPoints', 'coins', 'winningCoins', 'lastDepositUtr', 'lastEntryTournamentId',
+        'unlockedCosmetics', 'achievements',
         'suspended', 'fcmEnabled', 'lastDailyClaimDate', 'lastDailyClaimAt',
         'dailyClaimStreak', 'createdAt', 'updatedAt'
       ])
@@ -71,6 +94,9 @@ service cloud.firestore {
       && data.totalKills is int && data.totalKills >= 0 && data.totalKills <= 1000000
       && data.totalPoints is int && data.totalPoints >= 0 && data.totalPoints <= 10000000
       && data.coins is int && data.coins >= 0 && data.coins <= 100000000
+      && (!('winningCoins' in data) || (data.winningCoins is int && data.winningCoins >= 0 && data.winningCoins <= data.coins))
+      && (!('lastDepositUtr' in data) || (data.lastDepositUtr is string && data.lastDepositUtr.size() == 12 && data.lastDepositUtr.matches('^[0-9]{12}$')))
+      && (!('lastEntryTournamentId' in data) || (data.lastEntryTournamentId is string && isValidId(data.lastEntryTournamentId)))
       && (!('unlockedCosmetics' in data) || (data.unlockedCosmetics is list && data.unlockedCosmetics.size() <= 32))
       && (!('achievements' in data) || (data.achievements is list && data.achievements.size() <= 32))
       && data.suspended is bool
@@ -109,13 +135,13 @@ service cloud.firestore {
       && data.keys().hasOnly([
         'id', 'title', 'category', 'mode', 'mapName', 'bannerUrl', 'matchDate', 'matchTime',
         'registrationDeadline', 'credentialsReleaseAt', 'maxSlots', 'filledSlots',
-        'status', 'featured', 'published', 'rules', 'coinReward', 'perKillCoins',
+        'status', 'featured', 'published', 'rules', 'entryFeeCoins', 'coinReward', 'perKillCoins',
         'createdBy', 'createdAt', 'updatedAt'
       ])
       && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
       && data.title is string && data.title.size() >= 3 && data.title.size() <= 100
-      && data.category in ['Battle Royale', 'Clash Squad', 'Lone Wolf']
-      && data.mode in ['Solo', 'Duo', 'Squad', 'CS 1v1', 'CS 2v2', 'CS 4v4', 'Lone Wolf 1v1', 'Lone Wolf 2v2']
+      && data.category in ['Battle Royale', 'Clash Squad', 'Lone Wolf', 'Custom']
+      && data.mode is string && data.mode.size() >= 2 && data.mode.size() <= 48
       && data.mapName is string && data.mapName.size() >= 2 && data.mapName.size() <= 48
       && (!('bannerUrl' in data) || (data.bannerUrl is string && data.bannerUrl.size() <= 200000))
       && data.matchDate is string && data.matchDate.size() >= 4 && data.matchDate.size() <= 32
@@ -128,8 +154,9 @@ service cloud.firestore {
       && data.featured is bool
       && data.published is bool
       && data.rules is list && data.rules.size() <= 20
-      && data.coinReward is int && data.coinReward >= 0 && data.coinReward <= 100000
-      && data.perKillCoins is int && data.perKillCoins >= 0 && data.perKillCoins <= 10000
+      && (!('entryFeeCoins' in data) || (data.entryFeeCoins is int && data.entryFeeCoins >= 0 && data.entryFeeCoins <= 1000000))
+      && data.coinReward is int && data.coinReward >= 0 && data.coinReward <= 10000000
+      && data.perKillCoins is int && data.perKillCoins >= 0 && data.perKillCoins <= 100000
       && data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128
       && data.createdAt is timestamp
       && data.updatedAt is timestamp;
@@ -142,7 +169,8 @@ service cloud.firestore {
       ])
       && data.keys().hasOnly([
         'id', 'tournamentId', 'userId', 'username', 'freeFireIgn',
-        'freeFireUid', 'teamName', 'teammates', 'slotNumber', 'status',
+        'freeFireUid', 'teamName', 'teammates', 'slotNumber',
+        'entryFeePaid', 'entryWinningCoinsPaid', 'status',
         'createdAt', 'updatedAt'
       ])
       && data.id is string && data.id.size() >= 1 && data.id.size() <= 256
@@ -155,6 +183,8 @@ service cloud.firestore {
       && (!('teamName' in data) || (data.teamName is string && data.teamName.size() <= 40))
       && (!('teammates' in data) || (data.teammates is list && data.teammates.size() <= 4))
       && data.slotNumber is int && data.slotNumber >= 1 && data.slotNumber <= 1000000
+      && (!('entryFeePaid' in data) || (data.entryFeePaid is int && data.entryFeePaid >= 0 && data.entryFeePaid <= 1000000))
+      && (!('entryWinningCoinsPaid' in data) || (data.entryWinningCoinsPaid is int && data.entryWinningCoinsPaid >= 0 && ('entryFeePaid' in data) && data.entryWinningCoinsPaid <= data.entryFeePaid))
       && data.status in ['confirmed', 'cancelled']
       && data.createdAt is timestamp
       && data.updatedAt is timestamp;
@@ -172,7 +202,7 @@ service cloud.firestore {
       && data.id is string && isValidId(data.id)
       && data.tournamentId is string && isValidId(data.tournamentId)
       && data.title is string && data.title.size() >= 3 && data.title.size() <= 100
-      && data.mode is string && data.mode.size() >= 2 && data.mode.size() <= 32
+      && data.mode is string && data.mode.size() >= 2 && data.mode.size() <= 48
       && data.status in ['scheduled', 'room_ready', 'live', 'completed', 'cancelled']
       && data.credentialsPublished is bool
       && data.credentialsReleaseAt is timestamp
@@ -247,14 +277,41 @@ service cloud.firestore {
       && data.username is string && data.username.size() >= 2 && data.username.size() <= 32
       && data.freeFireUid is string && data.freeFireUid.size() >= 6 && data.freeFireUid.size() <= 16
       && data.freeFireUid.matches('^[0-9]+$')
-      && data.coins is int && data.coins >= 100 && data.coins <= 10000000
+      && data.coins is int && data.coins >= 50 && data.coins <= 10000000
       && (data.rupees is int || data.rupees is float)
-      && data.rupees >= 10 && data.rupees <= 1000000
-      && data.rupees * 10 >= data.coins - 0.01
-      && data.rupees * 10 <= data.coins + 0.01
+      && data.rupees >= 50 && data.rupees <= 10000000
+      && data.rupees >= data.coins - 0.01
+      && data.rupees <= data.coins + 0.01
       && data.method in ['upi', 'bank']
       && data.destination is string && data.destination.size() >= 5 && data.destination.size() <= 120
       && data.status in ['pending', 'approved', 'rejected']
+      && (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 200))
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidCoinDeposit(data) {
+      return data.keys().hasAll([
+        'id', 'utr', 'userId', 'username', 'freeFireUid', 'rupees',
+        'coins', 'status', 'verificationNote', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'utr', 'userId', 'username', 'freeFireUid', 'rupees',
+        'coins', 'payerUpi', 'screenshotUrl', 'status', 'verificationNote',
+        'adminNote', 'createdAt', 'updatedAt'
+      ])
+      && data.id is string && isValidId(data.id)
+      && data.utr is string && data.utr.size() == 12 && data.utr.matches('^[0-9]{12}$')
+      && data.userId is string && isValidId(data.userId)
+      && data.username is string && data.username.size() >= 2 && data.username.size() <= 32
+      && data.freeFireUid is string && data.freeFireUid.size() >= 6 && data.freeFireUid.size() <= 16
+      && data.freeFireUid.matches('^[0-9]+$')
+      && data.rupees is int && data.rupees >= 10 && data.rupees <= 10000
+      && data.coins is int && data.coins == data.rupees
+      && (!('payerUpi' in data) || (data.payerUpi is string && data.payerUpi.size() <= 100))
+      && (!('screenshotUrl' in data) || (data.screenshotUrl is string && data.screenshotUrl.size() <= 200000))
+      && data.status in ['verified', 'rejected']
+      && data.verificationNote is string && data.verificationNote.size() >= 3 && data.verificationNote.size() <= 200
       && (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 200))
       && data.createdAt is timestamp
       && data.updatedAt is timestamp;
@@ -267,7 +324,7 @@ service cloud.firestore {
       && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
       && data.title is string && data.title.size() >= 2 && data.title.size() <= 100
       && data.body is string && data.body.size() >= 2 && data.body.size() <= 300
-      && data.type in ['tournament', 'registration', 'room', 'reminder', 'cancellation', 'result', 'achievement', 'withdrawal', 'system']
+      && data.type in ['tournament', 'registration', 'room', 'reminder', 'cancellation', 'result', 'achievement', 'withdrawal', 'deposit', 'system']
       && (!('tournamentId' in data) || (data.tournamentId is string && data.tournamentId.size() <= 128))
       && data.read is bool
       && data.createdAt is timestamp;
@@ -285,29 +342,18 @@ service cloud.firestore {
     }
 
     function isValidAdminSettings(data) {
-      return data.keys().hasAll([
-        'id', 'adMobMode', 'bannerAdUnitId', 'interstitialAdUnitId',
-        'rewardedAdUnitId', 'maintenanceMode', 'updatedAt'
-      ])
+      return data.keys().hasAll(['id', 'maintenanceMode', 'updatedAt'])
       && data.keys().hasOnly([
-        'id', 'adMobMode', 'adMobAppId', 'adSenseClientId', 'bannerAdUnitId',
-        'interstitialAdUnitId', 'rewardedAdUnitId',
-        'bannerAdsEnabled', 'interstitialAdsEnabled', 'rewardedAdsEnabled',
-        'interstitialCooldownSeconds', 'bannerPlacement',
+        'id', 'paymentQrDataUrl', 'paymentUpiId', 'paymentReceiverName',
+        'telegramSupportUrl', 'telegramSupportLabel',
         'featuredAnnouncement', 'maintenanceMode', 'updatedAt'
       ])
       && data.id is string && isValidId(data.id)
-      && data.adMobMode in ['test', 'production']
-      && (!('adMobAppId' in data) || (data.adMobAppId is string && data.adMobAppId.size() <= 128))
-      && (!('adSenseClientId' in data) || (data.adSenseClientId is string && data.adSenseClientId.size() <= 128))
-      && data.bannerAdUnitId is string && data.bannerAdUnitId.size() <= 128
-      && data.interstitialAdUnitId is string && data.interstitialAdUnitId.size() <= 128
-      && data.rewardedAdUnitId is string && data.rewardedAdUnitId.size() <= 128
-      && (!('bannerAdsEnabled' in data) || data.bannerAdsEnabled is bool)
-      && (!('interstitialAdsEnabled' in data) || data.interstitialAdsEnabled is bool)
-      && (!('rewardedAdsEnabled' in data) || data.rewardedAdsEnabled is bool)
-      && (!('interstitialCooldownSeconds' in data) || (data.interstitialCooldownSeconds is int && data.interstitialCooldownSeconds >= 30 && data.interstitialCooldownSeconds <= 600))
-      && (!('bannerPlacement' in data) || data.bannerPlacement in ['all_screens', 'home_and_matches', 'home_only'])
+      && (!('paymentQrDataUrl' in data) || (data.paymentQrDataUrl is string && data.paymentQrDataUrl.size() <= 200000))
+      && (!('paymentUpiId' in data) || (data.paymentUpiId is string && data.paymentUpiId.size() <= 100))
+      && (!('paymentReceiverName' in data) || (data.paymentReceiverName is string && data.paymentReceiverName.size() <= 80))
+      && (!('telegramSupportUrl' in data) || (data.telegramSupportUrl is string && data.telegramSupportUrl.size() <= 160 && (data.telegramSupportUrl.size() == 0 || data.telegramSupportUrl.matches('^https://(t|telegram)\\.me/[a-zA-Z0-9_+\\-/]+$'))))
+      && (!('telegramSupportLabel' in data) || (data.telegramSupportLabel is string && data.telegramSupportLabel.size() <= 80))
       && (!('featuredAnnouncement' in data) || (data.featuredAnnouncement is string && data.featuredAnnouncement.size() <= 200))
       && data.maintenanceMode is bool
       && data.updatedAt is timestamp;
@@ -328,6 +374,7 @@ service cloud.firestore {
         && incoming().totalPoints == 0
         && incoming().matchesPlayed == 0
         && incoming().coins == 0
+        && (!('winningCoins' in incoming()) || incoming().winningCoins == 0)
         && incoming().suspended == false
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
@@ -352,13 +399,65 @@ service cloud.firestore {
               ) ||
               incoming().diff(existing()).affectedKeys().hasOnly(['freeFireIgn', 'freeFireUid', 'avatarUrl', 'activeTheme', 'activeBadge', 'unlockedCosmetics', 'fcmEnabled', 'updatedAt']) ||
               (
-                incoming().diff(existing()).affectedKeys().hasOnly(['tournamentsJoined', 'achievements', 'unlockedCosmetics', 'updatedAt'])
+                incoming().diff(existing()).affectedKeys().hasOnly(['tournamentsJoined', 'coins', 'winningCoins', 'lastEntryTournamentId', 'achievements', 'unlockedCosmetics', 'updatedAt'])
                 && incoming().tournamentsJoined <= existing().tournamentsJoined + 1
+                && ('lastEntryTournamentId' in incoming())
+                && isValidId(incoming().lastEntryTournamentId)
+                && exists(/databases/$(database)/documents/tournaments/$(incoming().lastEntryTournamentId))
+                && incoming().coins >= 0
+                && incoming().coins == existing().coins - getTournamentFee(incoming().lastEntryTournamentId)
+                && ('winningCoins' in incoming())
+                && incoming().winningCoins == (
+                  incoming().coins < getEffectiveWinning(existing())
+                    ? incoming().coins
+                    : getEffectiveWinning(existing())
+                )
+                && existsAfter(/databases/$(database)/documents/registrations/$(incoming().lastEntryTournamentId + '_' + userId))
+                && getAfter(/databases/$(database)/documents/registrations/$(incoming().lastEntryTournamentId + '_' + userId)).data.status == 'confirmed'
+                && (
+                  getTournamentFee(incoming().lastEntryTournamentId) == 0 ||
+                  (
+                    getAfter(/databases/$(database)/documents/registrations/$(incoming().lastEntryTournamentId + '_' + userId)).data.entryFeePaid == getTournamentFee(incoming().lastEntryTournamentId)
+                    && getAfter(/databases/$(database)/documents/registrations/$(incoming().lastEntryTournamentId + '_' + userId)).data.entryWinningCoinsPaid == (getEffectiveWinning(existing()) - incoming().winningCoins)
+                  )
+                )
               ) ||
               (
-                incoming().diff(existing()).affectedKeys().hasOnly(['coins', 'updatedAt'])
+                incoming().diff(existing()).affectedKeys().hasOnly(['coins', 'winningCoins', 'lastEntryTournamentId', 'updatedAt'])
+                && ('lastEntryTournamentId' in incoming())
+                && isValidId(incoming().lastEntryTournamentId)
+                && exists(/databases/$(database)/documents/registrations/$(incoming().lastEntryTournamentId + '_' + userId))
+                && get(/databases/$(database)/documents/registrations/$(incoming().lastEntryTournamentId + '_' + userId)).data.status == 'confirmed'
+                && getAfter(/databases/$(database)/documents/registrations/$(incoming().lastEntryTournamentId + '_' + userId)).data.status == 'cancelled'
+                && getRegFeePaid(incoming().lastEntryTournamentId + '_' + userId) > 0
+                && incoming().coins == existing().coins + getRegFeePaid(incoming().lastEntryTournamentId + '_' + userId)
+                && ('winningCoins' in incoming())
+                && incoming().winningCoins == getEffectiveWinning(existing()) + getRegWinPaid(incoming().lastEntryTournamentId + '_' + userId)
+              ) ||
+              (
+                incoming().diff(existing()).affectedKeys().hasOnly(['coins', 'winningCoins', 'updatedAt'])
                 && incoming().coins >= 0
-                && incoming().coins <= existing().coins - 100
+                && incoming().coins <= existing().coins - 50
+                && ('winningCoins' in incoming())
+                && incoming().winningCoins >= 0
+                && (
+                  ('winningCoins' in existing())
+                    ? incoming().winningCoins == existing().winningCoins - (existing().coins - incoming().coins)
+                    : incoming().winningCoins == incoming().coins
+                )
+              ) ||
+              (
+                incoming().diff(existing()).affectedKeys().hasOnly(['coins', 'winningCoins', 'lastDepositUtr', 'achievements', 'updatedAt'])
+                && incoming().coins >= existing().coins + 10
+                && incoming().coins <= existing().coins + 10000
+                && ('winningCoins' in incoming())
+                && incoming().winningCoins == (('winningCoins' in existing()) ? existing().winningCoins : existing().coins)
+                && incoming().lastDepositUtr is string
+                && incoming().lastDepositUtr.matches('^[0-9]{12}$')
+                && !exists(/databases/$(database)/documents/coin_deposits/$(incoming().lastDepositUtr))
+                && existsAfter(/databases/$(database)/documents/coin_deposits/$(incoming().lastDepositUtr))
+                && getAfter(/databases/$(database)/documents/coin_deposits/$(incoming().lastDepositUtr)).data.userId == userId
+                && getAfter(/databases/$(database)/documents/coin_deposits/$(incoming().lastDepositUtr)).data.coins == incoming().coins - existing().coins
               )
             )
           )
@@ -438,7 +537,24 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/tournaments/$(incoming().tournamentId))
         && get(/databases/$(database)/documents/tournaments/$(incoming().tournamentId)).data.published == true
         && get(/databases/$(database)/documents/tournaments/$(incoming().tournamentId)).data.status == 'upcoming'
-        && get(/databases/$(database)/documents/tournaments/$(incoming().tournamentId)).data.filledSlots < get(/databases/$(database)/documents/tournaments/$(incoming().tournamentId)).data.maxSlots;
+        && get(/databases/$(database)/documents/tournaments/$(incoming().tournamentId)).data.filledSlots < get(/databases/$(database)/documents/tournaments/$(incoming().tournamentId)).data.maxSlots
+        && (
+          (
+            getTournamentFee(incoming().tournamentId) == 0
+            && (!('entryFeePaid' in incoming()) || incoming().entryFeePaid == 0)
+            && (!('entryWinningCoinsPaid' in incoming()) || incoming().entryWinningCoinsPaid == 0)
+          ) ||
+          (
+            getTournamentFee(incoming().tournamentId) > 0
+            && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins >= getTournamentFee(incoming().tournamentId)
+            && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins - getTournamentFee(incoming().tournamentId)
+            && ('entryFeePaid' in incoming())
+            && incoming().entryFeePaid == getTournamentFee(incoming().tournamentId)
+            && ('entryWinningCoinsPaid' in incoming())
+            && incoming().entryWinningCoinsPaid == getEffectiveWinning(get(/databases/$(database)/documents/users/$(request.auth.uid)).data) - getEffectiveWinning(getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data)
+          )
+        );
       allow update: if isVerified() && isValidId(registrationId)
         && isValidRegistration(incoming())
         && incoming().id == existing().id
@@ -453,15 +569,40 @@ service cloud.firestore {
             && existing().status == 'confirmed'
             && incoming().status == 'cancelled'
             && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+            && (
+              !('entryFeePaid' in existing()) ||
+              existing().entryFeePaid == 0 ||
+              (
+                getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins + existing().entryFeePaid
+                && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.winningCoins == getEffectiveWinning(get(/databases/$(database)/documents/users/$(request.auth.uid)).data) + (('entryWinningCoinsPaid' in existing()) ? existing().entryWinningCoinsPaid : 0)
+              )
+            )
           ) ||
           (
             existing().userId == request.auth.uid
             && existing().status == 'cancelled'
             && incoming().status == 'confirmed'
-            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'freeFireIgn', 'freeFireUid', 'teamName', 'teammates', 'slotNumber', 'updatedAt'])
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'freeFireIgn', 'freeFireUid', 'teamName', 'teammates', 'slotNumber', 'entryFeePaid', 'entryWinningCoinsPaid', 'updatedAt'])
             && get(/databases/$(database)/documents/tournaments/$(incoming().tournamentId)).data.published == true
             && get(/databases/$(database)/documents/tournaments/$(incoming().tournamentId)).data.status == 'upcoming'
             && get(/databases/$(database)/documents/tournaments/$(incoming().tournamentId)).data.filledSlots < get(/databases/$(database)/documents/tournaments/$(incoming().tournamentId)).data.maxSlots
+            && (
+              (
+                getTournamentFee(incoming().tournamentId) == 0
+                && (!('entryFeePaid' in incoming()) || incoming().entryFeePaid == 0)
+                && (!('entryWinningCoinsPaid' in incoming()) || incoming().entryWinningCoinsPaid == 0)
+              ) ||
+              (
+                getTournamentFee(incoming().tournamentId) > 0
+                && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+                && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins >= getTournamentFee(incoming().tournamentId)
+                && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins - getTournamentFee(incoming().tournamentId)
+                && ('entryFeePaid' in incoming())
+                && incoming().entryFeePaid == getTournamentFee(incoming().tournamentId)
+                && ('entryWinningCoinsPaid' in incoming())
+                && incoming().entryWinningCoinsPaid == getEffectiveWinning(get(/databases/$(database)/documents/users/$(request.auth.uid)).data) - getEffectiveWinning(getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data)
+              )
+            )
           )
         );
       allow delete: if isAdmin() && isValidId(registrationId);
@@ -539,7 +680,17 @@ service cloud.firestore {
                 && incoming().weeklyKills == existing().weeklyKills
                 && incoming().weeklyPoints == existing().weeklyPoints
               ) ||
-              incoming().diff(existing()).affectedKeys().hasOnly(['username', 'avatarUrl', 'updatedAt'])
+              incoming().diff(existing()).affectedKeys().hasOnly(['username', 'avatarUrl', 'updatedAt']) ||
+              (
+                incoming().diff(existing()).affectedKeys().hasOnly(['coins', 'updatedAt'])
+                && incoming().coins == getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins
+                && incoming().totalWins == existing().totalWins
+                && incoming().totalKills == existing().totalKills
+                && incoming().totalPoints == existing().totalPoints
+                && incoming().weeklyWins == existing().weeklyWins
+                && incoming().weeklyKills == existing().weeklyKills
+                && incoming().weeklyPoints == existing().weeklyPoints
+              )
             )
           )
         );
@@ -562,7 +713,16 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.suspended == false
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins >= incoming().coins
-        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins - incoming().coins;
+        && (
+          !('winningCoins' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.winningCoins >= incoming().coins
+        )
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins - incoming().coins
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.winningCoins == (
+          ('winningCoins' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
+            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.winningCoins - incoming().coins
+            : get(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins - incoming().coins
+        );
       allow update: if isAdmin() && isValidId(withdrawalId)
         && isValidWithdrawal(incoming())
         && incoming().id == existing().id
@@ -572,6 +732,41 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(withdrawalId);
+    }
+
+    match /coin_deposits/{depositId} {
+      allow get: if isValidId(depositId) && (
+        resource == null ||
+        isAdmin() ||
+        (isSignedIn() && existing().userId == request.auth.uid)
+      );
+      allow list: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
+      allow create: if isVerified() && isValidId(depositId)
+        && isValidCoinDeposit(incoming())
+        && incoming().id == depositId
+        && incoming().utr == depositId
+        && depositId.matches('^[0-9]{12}$')
+        && incoming().userId == request.auth.uid
+        && incoming().status == 'verified'
+        && !('adminNote' in incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.suspended == false
+        && exists(/databases/$(database)/documents/admin_settings/default)
+        && ('paymentQrDataUrl' in get(/databases/$(database)/documents/admin_settings/default).data)
+        && get(/databases/$(database)/documents/admin_settings/default).data.paymentQrDataUrl.size() > 20
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.coins + incoming().coins;
+      allow update: if isAdmin() && isValidId(depositId)
+        && isValidCoinDeposit(incoming())
+        && incoming().id == existing().id
+        && incoming().utr == existing().utr
+        && incoming().userId == existing().userId
+        && incoming().coins == existing().coins
+        && incoming().rupees == existing().rupees
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(depositId);
     }
 
     match /notifications/{notificationId} {

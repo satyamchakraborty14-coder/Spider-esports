@@ -1,18 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  calculateEntryFeeDeduction,
+  calculateEntryFeeRefund,
   canCancelRegistration,
   canJoinTournament,
   canViewRoomCredentials,
+  formatEntryFeeLabel,
   getAvailableSlots,
   getModeDefinition,
+  getModesForMatchesFilter,
   isStrictSoleAdminEmail,
   isStrictSoleAdminSession,
   isTournamentFull,
+  pickRandomCustomModeName,
   validateAdminPassword,
   validateAdminSlotUpdate,
+  validateCustomModeName,
+  validateEntryFeeCoins,
   validateFreeFireIgn,
   validateFreeFireUid,
+  validatePrizePoolCoins,
   validateSlotAssignment,
   validateTeammates,
   validateTournamentBannerUrl,
@@ -35,6 +43,7 @@ const baseTournament: Tournament = {
   featured: true,
   published: true,
   rules: ['No emulators', 'Fair play only'],
+  entryFeeCoins: 0,
   coinReward: 300,
   perKillCoins: 10,
   createdBy: 'admin-1',
@@ -323,4 +332,105 @@ test('validateTournamentBannerUrl accepts uploaded base64 images, bundled assets
     validateTournamentBannerUrl(`data:image/jpeg;base64,${'A'.repeat(200_050)}`).valid,
     false
   );
+});
+
+test('custom mode definitions, random mode generator, and dynamic Matches mode filter work', () => {
+  const customDef = getModeDefinition('Sniper Only 1v1');
+  assert.equal(customDef.category, 'Custom');
+  assert.equal(customDef.mode, 'Sniper Only 1v1');
+  assert.equal(customDef.requiredTeammates, 0);
+
+  const randomIdea = pickRandomCustomModeName();
+  assert.ok(randomIdea.length >= 2);
+  assert.notEqual(pickRandomCustomModeName(randomIdea), randomIdea);
+
+  assert.equal(validateCustomModeName('X').valid, false);
+  assert.deepEqual(validateCustomModeName('  Shotgun Chaos 2v2 '), {
+    valid: true,
+    mode: 'Shotgun Chaos 2v2',
+  });
+
+  const sampleTournaments = [
+    baseTournament,
+    { ...baseTournament, id: 'c1', category: 'Custom' as const, mode: 'Sniper Only 1v1' },
+    { ...baseTournament, id: 'c2', category: 'Custom' as const, mode: 'Random Gloo Rush' },
+  ];
+  assert.deepEqual(getModesForMatchesFilter('Custom', sampleTournaments), [
+    'Sniper Only 1v1',
+    'Random Gloo Rush',
+  ]);
+  const allModes = getModesForMatchesFilter('All', sampleTournaments);
+  assert.ok(allModes.includes('Solo'));
+  assert.ok(allModes.includes('Sniper Only 1v1'));
+  assert.ok(allModes.includes('Random Gloo Rush'));
+});
+
+test('entry fee and prize pool validation, balance checks, and spend-non-winning-first math work', () => {
+  assert.equal(formatEntryFeeLabel(0), 'FREE');
+  assert.equal(formatEntryFeeLabel(25), '25 Coins (₹25)');
+  assert.equal(validateEntryFeeCoins(0).valid, true);
+  assert.equal(validateEntryFeeCoins(500).valid, true);
+  assert.equal(validateEntryFeeCoins(-1).valid, false);
+  assert.equal(validateEntryFeeCoins(10.5).valid, false);
+  assert.equal(validatePrizePoolCoins(250000, 50).valid, true);
+  assert.equal(validatePrizePoolCoins(-5, 0).valid, false);
+
+  const beforeDeadline = Date.parse('2026-11-15T18:00:00.000Z');
+  const paidTournament: Tournament = { ...baseTournament, entryFeeCoins: 50 };
+  assert.equal(
+    canJoinTournament({
+      tournament: paidTournament,
+      alreadyRegistered: false,
+      userSuspended: false,
+      userCoins: 49,
+      nowMs: beforeDeadline,
+    }).allowed,
+    false
+  );
+  assert.equal(
+    canJoinTournament({
+      tournament: paidTournament,
+      alreadyRegistered: false,
+      userSuspended: false,
+      userCoins: 50,
+      nowMs: beforeDeadline,
+    }).allowed,
+    true
+  );
+
+  // Spend non-redeemable coins first (total 100, winning 40 -> pay 50 -> total 50, winning stays 40)
+  const ded1 = calculateEntryFeeDeduction({
+    currentCoins: 100,
+    currentWinningCoins: 40,
+    entryFeeCoins: 50,
+  });
+  assert.equal(ded1.valid, true);
+  if (ded1.valid) {
+    assert.equal(ded1.nextCoins, 50);
+    assert.equal(ded1.nextWinningCoins, 40);
+    assert.equal(ded1.winningCoinsSpent, 0);
+  }
+
+  // If fee eats into winningCoins (total 100, winning 80 -> pay 50 -> total 50, winning 50, spent 30 winning)
+  const ded2 = calculateEntryFeeDeduction({
+    currentCoins: 100,
+    currentWinningCoins: 80,
+    entryFeeCoins: 50,
+  });
+  assert.equal(ded2.valid, true);
+  if (ded2.valid) {
+    assert.equal(ded2.nextCoins, 50);
+    assert.equal(ded2.nextWinningCoins, 50);
+    assert.equal(ded2.winningCoinsSpent, 30);
+
+    // Refund restores exact total & winning coins spent (never laundering deposited coins into winningCoins)
+    const ref = calculateEntryFeeRefund({
+      currentCoins: ded2.nextCoins,
+      currentWinningCoins: ded2.nextWinningCoins,
+      entryFeePaid: ded2.entryFeePaid,
+      entryWinningCoinsPaid: ded2.winningCoinsSpent,
+    });
+    assert.equal(ref.nextCoins, 100);
+    assert.equal(ref.nextWinningCoins, 80);
+  }
 });

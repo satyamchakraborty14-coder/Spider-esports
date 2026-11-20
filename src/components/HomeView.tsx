@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, CheckCircle2, Megaphone, Trophy, Users } from 'lucide-react';
+import {
+  ArrowRight,
+  CheckCircle2,
+  ExternalLink,
+  Megaphone,
+  MessageCircle,
+  ShieldCheck,
+  Trophy,
+  Users,
+  X,
+} from 'lucide-react';
 import type {
   AdminSettings,
   Announcement,
@@ -9,10 +19,14 @@ import type {
   UserProfile,
 } from '../types/esports';
 import { BRAND_ASSETS, resolveBundledAssetUrl } from '../lib/seedData';
-import { isTodayIsoDate } from '../utils/tournamentRules';
+import {
+  formatEntryFeeLabel,
+  getTournamentEntryFee,
+  isTodayIsoDate,
+} from '../utils/tournamentRules';
 import { sortLeaderboard } from '../utils/coinSystem';
+import { getTelegramSupportInfo } from '../utils/supportConfig';
 import { TournamentCard } from './TournamentCard';
-import { AdMobBannerSlot } from './AdMobUnits';
 import type { AppTab } from './Navigation';
 
 interface HomeViewProps {
@@ -23,10 +37,8 @@ interface HomeViewProps {
   results: TournamentResult[];
   announcements: Announcement[];
   leaderboard: LeaderboardEntry[];
-  registeredTournamentIds: Set<string>;
   adminSettings: AdminSettings;
-  consentAccepted: boolean;
-  onAcceptConsent: () => void;
+  registeredTournamentIds: Set<string>;
   onSelectTournament: (t: Tournament) => void;
   onNavigateTab: (tab: AppTab) => void;
   onOpenAuth: () => void;
@@ -41,17 +53,17 @@ export function HomeView({
   results,
   announcements,
   leaderboard,
-  registeredTournamentIds,
   adminSettings,
-  consentAccepted,
-  onAcceptConsent,
+  registeredTournamentIds,
   onSelectTournament,
   onNavigateTab,
   onOpenAuth,
-  onToast: _onToast,
+  onToast,
 }: HomeViewProps) {
   const [avatarError, setAvatarError] = useState(false);
   const [heroImgError, setHeroImgError] = useState(false);
+  const [supportBannerDismissed, setSupportBannerDismissed] = useState(false);
+  const supportInfo = getTelegramSupportInfo(adminSettings);
 
   const featured =
     tournaments.find((t) => t.featured && t.status !== 'cancelled') ||
@@ -130,6 +142,50 @@ export function HomeView({
         </div>
       </section>
 
+      {/* 100% Trusted App Banner */}
+      <section
+        aria-label="100% Trusted App"
+        className="rounded-xl border border-emerald-500/30 bg-[#121216] px-4 py-4 sm:px-6 flex flex-col md:flex-row md:items-center justify-between gap-4"
+      >
+        <div className="flex items-start sm:items-center gap-3.5">
+          <div className="w-10 h-10 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-5 h-5 text-emerald-400" />
+          </div>
+          <div className="space-y-0.5">
+            <h2 className="font-display text-base sm:text-lg font-bold text-white">
+              100% Trusted App · Verified Fair Play &amp; Payouts
+            </h2>
+            <p className="text-xs text-zinc-400">
+              Admin-audited match results · 1 Coin = ₹1 direct UPI payouts (Min ₹50) · 24/7 Telegram customer support
+            </p>
+          </div>
+        </div>
+
+        {supportInfo.configured ? (
+          <a
+            href={supportInfo.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="min-h-[40px] px-4 py-2 rounded-lg border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 text-xs font-semibold text-sky-300 inline-flex items-center justify-center gap-2 shrink-0 transition-colors"
+          >
+            <MessageCircle className="w-4 h-4" />
+            Customer Support
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        ) : (
+          <button
+            type="button"
+            onClick={() =>
+              onToast('Telegram support link is being connected by the admin. Please check back shortly.')
+            }
+            className="min-h-[40px] px-4 py-2 rounded-lg border border-white/15 bg-[#09090B] hover:bg-white/5 text-xs font-semibold text-zinc-200 inline-flex items-center justify-center gap-2 shrink-0 transition-colors"
+          >
+            <MessageCircle className="w-4 h-4 text-sky-400" />
+            Customer Support
+          </button>
+        )}
+      </section>
+
       {/* Featured Tournament Banner (Single Dominant Anchor) */}
       {featured && (
         <section aria-label="Featured Tournament" className="rounded-2xl border border-white/10 bg-[#121216] overflow-hidden">
@@ -173,7 +229,10 @@ export function HomeView({
                 </h2>
 
                 <p className="text-sm text-zinc-400 leading-relaxed">
-                  100% free community tournament on {featured.mapName}. Room ID and password unlock automatically for verified participants before match start.
+                  {getTournamentEntryFee(featured) > 0
+                    ? `Entry Fee: ${formatEntryFeeLabel(getTournamentEntryFee(featured))}`
+                    : 'FREE entry'}{' '}
+                  · Prize Pool: +{featured.coinReward.toLocaleString()} Coins on {featured.mapName}. Room ID and password unlock automatically for verified participants before match start.
                 </p>
 
                 <div className="grid grid-cols-3 gap-4 pt-3 border-t border-white/10 text-xs tabular-nums">
@@ -262,7 +321,7 @@ export function HomeView({
               {todayTournaments.length > 0 ? "Today's & Upcoming Matches" : 'Upcoming Tournaments'}
             </h2>
             <p className="text-xs text-zinc-400">
-              Battle Royale, Clash Squad, and Lone Wolf community brackets — always free entry
+              Battle Royale, Clash Squad, Lone Wolf, and Custom brackets — free &amp; entry-fee tournaments
             </p>
           </div>
           <button
@@ -405,14 +464,63 @@ export function HomeView({
         </section>
       )}
 
-      {/* AdMob Banner */}
-      <AdMobBannerSlot
-        settings={adminSettings}
-        screen="home"
-        placementLabel="Home Feed Footer"
-        consentAccepted={consentAccepted}
-        onAcceptConsent={onAcceptConsent}
-      />
+      {/* Floating 24/7 Customer Support Banner */}
+      {!supportBannerDismissed && (
+        <aside
+          aria-label="Customer Support Available 24/7"
+          className="fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-40 w-[calc(100vw-2rem)] max-w-[310px] rounded-xl border border-sky-500/40 bg-[#121216]/95 backdrop-blur-md p-3.5 shadow-2xl"
+        >
+          <div className="flex items-start justify-between gap-2.5">
+            <div className="flex items-start gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-lg bg-sky-500/15 border border-sky-500/35 flex items-center justify-center shrink-0">
+                <MessageCircle className="w-4 h-4 text-sky-400" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-white leading-tight">
+                  Customer Support Available 24/7
+                </p>
+                <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+                  {supportInfo.configured
+                    ? `${supportInfo.label} · ${supportInfo.displayHandle}`
+                    : 'Direct Telegram help for all issues'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSupportBannerDismissed(true)}
+              aria-label="Dismiss support banner"
+              className="p-1 rounded-md text-zinc-400 hover:text-white hover:bg-white/10 shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="mt-2.5">
+            {supportInfo.configured ? (
+              <a
+                href={supportInfo.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full min-h-[38px] px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-xs font-bold text-slate-950 inline-flex items-center justify-center gap-1.5 transition-colors"
+              >
+                Chat on Telegram
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={() =>
+                  onToast('Telegram support link is being connected by the admin. Please check back shortly.')
+                }
+                className="w-full min-h-[38px] px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 text-xs font-semibold text-sky-300 inline-flex items-center justify-center gap-1.5 transition-colors"
+              >
+                Open Customer Support
+              </button>
+            )}
+          </div>
+        </aside>
+      )}
     </div>
   );
 }

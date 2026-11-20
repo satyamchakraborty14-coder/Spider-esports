@@ -12,7 +12,6 @@ import {
   X,
 } from 'lucide-react';
 import type {
-  AdminSettings,
   MatchCredential,
   MatchInfo,
   Registration,
@@ -24,6 +23,8 @@ import {
   canCancelRegistration,
   canJoinTournament,
   canViewRoomCredentials,
+  formatEntryFeeLabel,
+  getTournamentEntryFee,
   validateFreeFireIgn,
   validateFreeFireUid,
 } from '../utils/tournamentRules';
@@ -33,9 +34,7 @@ import {
   joinTournamentInFirestore,
   subscribeTournamentRegistrations,
 } from '../lib/firestoreService';
-import { preloadInterstitialAd } from '../lib/admobBridge';
 import { BRAND_ASSETS, resolveBundledAssetUrl } from '../lib/seedData';
-import { AdMobBannerSlot } from './AdMobUnits';
 
 interface MatchDetailsModalProps {
   tournament: Tournament | null;
@@ -45,9 +44,6 @@ interface MatchDetailsModalProps {
   isSignedIn: boolean;
   isEmailVerified: boolean;
   isAdmin: boolean;
-  adminSettings: AdminSettings;
-  consentAccepted: boolean;
-  onAfterJoinConfirmation?: () => void;
   onClose: () => void;
   onRequireAuth: () => void;
   onSuccessToast: (msg: string) => void;
@@ -61,9 +57,6 @@ export function MatchDetailsModal({
   isSignedIn,
   isEmailVerified,
   isAdmin,
-  adminSettings,
-  consentAccepted,
-  onAfterJoinConfirmation,
   onClose,
   onRequireAuth,
   onSuccessToast,
@@ -101,9 +94,8 @@ export function MatchDetailsModal({
     const unsub = subscribeTournamentRegistrations(tournament.id, (items) => {
       setRegistrations(items);
     });
-    void preloadInterstitialAd(adminSettings, consentAccepted);
     return () => unsub();
-  }, [tournament?.id, profile, adminSettings, consentAccepted]);
+  }, [tournament?.id, profile]);
 
   const myRegistration = profile
     ? registrations.find((r) => r.userId === profile.uid && r.status === 'confirmed')
@@ -158,10 +150,14 @@ export function MatchDetailsModal({
         ? BRAND_ASSETS.loneWolfBanner
         : BRAND_ASSETS.battleRoyaleBanner;
 
+  const entryFee = getTournamentEntryFee(tournament);
+  const entryFeeText = formatEntryFeeLabel(entryFee);
+
   const joinEligibility = canJoinTournament({
     tournament: { ...tournament, filledSlots: displayFilledSlots },
     alreadyRegistered: effectiveRegistered,
     userSuspended: Boolean(profile?.suspended),
+    userCoins: profile?.coins,
   });
   const cancelEligibility = canCancelRegistration({
     tournament,
@@ -207,8 +203,11 @@ export function MatchDetailsModal({
         freeFireIgn: freeFireIgn.trim(),
         freeFireUid: freeFireUid.trim(),
       });
-      onSuccessToast(`Joined ${tournament.title}! Slot #${res.slotNumber} confirmed.`);
-      onAfterJoinConfirmation?.();
+      onSuccessToast(
+        res.entryFeePaid > 0
+          ? `Joined ${tournament.title}! Slot #${res.slotNumber} confirmed (${res.entryFeePaid.toLocaleString()} Coins deducted).`
+          : `Joined ${tournament.title}! Slot #${res.slotNumber} confirmed.`
+      );
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Unable to complete registration.');
     } finally {
@@ -221,9 +220,13 @@ export function MatchDetailsModal({
     setSubmitting(true);
     setFormError(null);
     try {
-      await cancelTournamentRegistration({ tournament, profile });
+      const res = await cancelTournamentRegistration({ tournament, profile });
       setJustJoined(null);
-      onSuccessToast('Registration cancelled and slot released.');
+      onSuccessToast(
+        res.refundedCoins > 0
+          ? `Registration cancelled, ${res.refundedCoins.toLocaleString()} Coins refunded, and slot released.`
+          : 'Registration cancelled and slot released.'
+      );
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Unable to cancel registration.');
     } finally {
@@ -258,7 +261,9 @@ export function MatchDetailsModal({
               <span aria-hidden="true">·</span>
               <span>{tournament.mapName}</span>
               <span aria-hidden="true">·</span>
-              <span>FREE ENTRY</span>
+              <span className={entryFee > 0 ? 'text-amber-300 font-semibold' : 'text-emerald-400 font-semibold'}>
+                {entryFee > 0 ? `Entry: ${entryFeeText}` : 'FREE ENTRY'}
+              </span>
             </div>
             <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white">
               {tournament.title}
@@ -300,7 +305,7 @@ export function MatchDetailsModal({
         </div>
 
         {/* Key Schedule Metrics */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 rounded-xl bg-[#09090B] border border-white/10 p-4 text-xs tabular-nums">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 rounded-xl bg-[#09090B] border border-white/10 p-4 text-xs tabular-nums">
           <div>
             <p className="text-zinc-400">Match Date</p>
             <p className="text-white font-semibold mt-1">{tournament.matchDate}</p>
@@ -316,7 +321,13 @@ export function MatchDetailsModal({
             </p>
           </div>
           <div>
-            <p className="text-zinc-400">Match Reward</p>
+            <p className="text-zinc-400">Entry Fee</p>
+            <p className={`font-semibold mt-1 ${entryFee > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
+              {entryFee > 0 ? entryFeeText : 'FREE (0 Coins)'}
+            </p>
+          </div>
+          <div>
+            <p className="text-zinc-400">Prize Pool</p>
             <p className="text-amber-400 font-semibold mt-1">
               +{tournament.coinReward.toLocaleString()} Coins
               {tournament.perKillCoins > 0 ? ` · +${tournament.perKillCoins}/kill` : ''}
@@ -420,7 +431,7 @@ export function MatchDetailsModal({
             {!isSignedIn ? (
               <div className="rounded-xl border border-white/10 bg-[#09090B] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <p className="text-xs text-zinc-300">
-                  Sign in with your verified SPIDER ESPORTS account to reserve a free tournament slot.
+                  Sign in with your verified SPIDER ESPORTS account to reserve your tournament slot.
                 </p>
                 <button
                   type="button"
@@ -468,6 +479,17 @@ export function MatchDetailsModal({
                   </div>
                 </div>
 
+                {entryFee > 0 && profile && (
+                  <div className="rounded-lg border border-amber-500/25 bg-amber-950/15 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs tabular-nums">
+                    <span className="text-amber-200">
+                      Entry Fee: <strong>{entryFeeText}</strong> (deducted from added coins first)
+                    </span>
+                    <span className="text-zinc-300">
+                      Wallet: <strong className="text-white">{profile.coins.toLocaleString()} Coins</strong>
+                    </span>
+                  </div>
+                )}
+
                 {formError && (
                   <p role="alert" className="text-xs text-[#F43F5E] font-medium">
                     {formError}
@@ -479,7 +501,11 @@ export function MatchDetailsModal({
                   disabled={submitting}
                   className="w-full min-h-[48px] px-5 py-3 rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] disabled:opacity-50 text-sm font-semibold text-white transition-colors"
                 >
-                  {submitting ? 'Confirming Slot...' : 'Confirm Free Entry'}
+                  {submitting
+                    ? 'Confirming Slot...'
+                    : entryFee > 0
+                      ? `Pay ${entryFee.toLocaleString()} Coins & Join`
+                      : 'Confirm Free Entry'}
                 </button>
               </form>
             )}
@@ -553,14 +579,6 @@ export function MatchDetailsModal({
             </div>
           )}
         </section>
-
-        {/* Non-overlapping AdMob Banner Slot below registration & participants */}
-        <AdMobBannerSlot
-          settings={adminSettings}
-          screen="matches"
-          placementLabel="Match Join & Details Sponsor"
-          consentAccepted={consentAccepted}
-        />
       </div>
     </div>
   );

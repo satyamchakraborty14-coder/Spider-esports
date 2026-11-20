@@ -6,9 +6,10 @@ import type {
   WithdrawalMethod,
 } from '../types/esports';
 
-export const COINS_PER_10_INR = 100;
-export const INR_PER_100_COINS = 10;
-export const MIN_WITHDRAWAL_COINS = 100;
+export const COINS_PER_RUPEE = 1;
+export const RUPEES_PER_COIN = 1;
+export const MIN_WITHDRAWAL_RUPEES = 50;
+export const MIN_WITHDRAWAL_COINS = 50;
 export const MAX_WITHDRAWAL_COINS = 10_000_000;
 
 export const COSMETIC_CATALOG: CosmeticItem[] = [
@@ -25,7 +26,7 @@ export const COSMETIC_CATALOG: CosmeticItem[] = [
     id: 'theme-crimson-grid',
     name: 'Crimson Vector',
     type: 'theme',
-    description: 'Unlocked after joining 1 free community tournament.',
+    description: 'Unlocked after joining 1 community tournament.',
     unlockMetric: 'tournamentsJoined',
     unlockThreshold: 1,
     previewColor: '#e11d48',
@@ -79,23 +80,20 @@ export const COSMETIC_CATALOG: CosmeticItem[] = [
   },
   {
     id: 'badge-arena-supporter',
-    name: 'Arena Supporter',
+    name: 'Arena Veteran',
     type: 'badge',
-    description:
-      'Optional non-cash cosmetic emblem unlocked via Rewarded Ad (never awards Spider Coins or cash).',
-    unlockThreshold: 1,
-    rewardedAdUnlock: true,
+    description: 'Unlocked after competing in 3 SPIDER ESPORTS tournaments.',
+    unlockMetric: 'tournamentsJoined',
+    unlockThreshold: 3,
     previewColor: '#fbbf24',
   },
 ];
-
-export const REWARDED_COSMETIC_ID = 'badge-arena-supporter';
 
 export const ACHIEVEMENTS_CATALOG: AchievementItem[] = [
   {
     id: 'first-drop',
     title: 'First Drop',
-    description: 'Join your first free SPIDER ESPORTS tournament.',
+    description: 'Join your first SPIDER ESPORTS tournament.',
     metric: 'tournamentsJoined',
     threshold: 1,
   },
@@ -114,17 +112,36 @@ export const ACHIEVEMENTS_CATALOG: AchievementItem[] = [
     threshold: 1,
   },
   {
-    id: 'coin-milestone-1000',
-    title: '100 Coin Earner',
-    description: 'Accumulate 100 Spider Coins (₹10 payout threshold) from match rewards.',
+    id: 'coin-milestone-50',
+    title: '50 Coin Earner',
+    description: 'Reach 50 winning prize Spider Coins (₹50 minimum withdrawal threshold).',
     metric: 'coins',
-    threshold: 100,
+    threshold: 50,
   },
 ];
 
+export function getRedeemableWinningCoins(
+  profile: Pick<UserProfile, 'coins' | 'winningCoins'> | null | undefined
+): number {
+  if (!profile) return 0;
+  const total = Math.max(0, Math.floor(profile.coins ?? 0));
+  if (typeof profile.winningCoins === 'number' && Number.isFinite(profile.winningCoins)) {
+    return Math.max(0, Math.min(total, Math.floor(profile.winningCoins)));
+  }
+  return total;
+}
+
+export function getNonRedeemableCoins(
+  profile: Pick<UserProfile, 'coins' | 'winningCoins'> | null | undefined
+): number {
+  if (!profile) return 0;
+  const total = Math.max(0, Math.floor(profile.coins ?? 0));
+  return Math.max(0, total - getRedeemableWinningCoins(profile));
+}
+
 export function calculateRupeesFromCoins(coins: number): number {
   if (!Number.isFinite(coins) || coins <= 0) return 0;
-  return Math.round(((coins * INR_PER_100_COINS) / COINS_PER_10_INR) * 100) / 100;
+  return Math.round(coins * RUPEES_PER_COIN * 100) / 100;
 }
 
 export function formatRupees(rupees: number): string {
@@ -144,35 +161,62 @@ export function calculateMatchCoinReward(params: {
 
 export function validateAdminCoinAdjustment(params: {
   currentCoins: number;
+  currentWinningCoins?: number;
   deltaCoins: number;
-}): { valid: true; nextCoins: number; deltaCoins: number } | { valid: false; error: string } {
-  const { currentCoins, deltaCoins } = params;
+  coinType?: 'winning' | 'bonus';
+}):
+  | { valid: true; nextCoins: number; nextWinningCoins: number; deltaCoins: number }
+  | { valid: false; error: string } {
+  const { currentCoins, deltaCoins, coinType = 'winning' } = params;
+  const safeTotal = Math.max(0, Math.floor(currentCoins));
+  const safeWinning =
+    typeof params.currentWinningCoins === 'number' && Number.isFinite(params.currentWinningCoins)
+      ? Math.max(0, Math.min(safeTotal, Math.floor(params.currentWinningCoins)))
+      : safeTotal;
+
   if (!Number.isInteger(deltaCoins) || deltaCoins === 0) {
     return { valid: false, error: 'Enter a non-zero whole number of coins.' };
   }
   if (Math.abs(deltaCoins) > 1_000_000) {
     return { valid: false, error: 'Single coin adjustment cannot exceed 1,000,000 coins.' };
   }
-  const nextCoins = Math.floor(currentCoins) + deltaCoins;
+  const nextCoins = safeTotal + deltaCoins;
   if (nextCoins < 0) {
     return { valid: false, error: 'Player coin balance cannot drop below 0.' };
   }
-  return { valid: true, nextCoins, deltaCoins };
+
+  let nextWinningCoins: number;
+  if (coinType === 'winning') {
+    nextWinningCoins =
+      deltaCoins > 0
+        ? Math.min(nextCoins, safeWinning + deltaCoins)
+        : Math.max(0, Math.min(nextCoins, safeWinning + deltaCoins));
+  } else {
+    nextWinningCoins = Math.min(nextCoins, safeWinning);
+  }
+
+  return { valid: true, nextCoins, nextWinningCoins, deltaCoins };
 }
 
 export function validateWithdrawalRequest(params: {
   amountCoins: number;
   availableCoins: number;
+  availableWinningCoins: number;
   method: WithdrawalMethod;
   destination: string;
 }):
   | { valid: true; coins: number; rupees: number; destination: string }
   | { valid: false; error: string } {
-  const { amountCoins, availableCoins, method, destination } = params;
+  const { amountCoins, availableCoins, availableWinningCoins, method, destination } = params;
+  const redeemableWinning = Math.min(
+    Math.max(0, Math.floor(availableCoins)),
+    Math.max(0, Math.floor(availableWinningCoins))
+  );
+
   if (!Number.isInteger(amountCoins) || amountCoins < MIN_WITHDRAWAL_COINS) {
     return {
       valid: false,
-      error: `Minimum withdrawal is ${MIN_WITHDRAWAL_COINS.toLocaleString()} coins (₹${INR_PER_100_COINS}).`,
+      error: `Minimum withdrawal is ${MIN_WITHDRAWAL_COINS.toLocaleString()} winning coins (₹${MIN_WITHDRAWAL_RUPEES}).`,
     };
   }
   if (amountCoins > MAX_WITHDRAWAL_COINS) {
@@ -181,10 +225,10 @@ export function validateWithdrawalRequest(params: {
       error: `Maximum single withdrawal is ${MAX_WITHDRAWAL_COINS.toLocaleString()} coins.`,
     };
   }
-  if (amountCoins > availableCoins) {
+  if (amountCoins > redeemableWinning) {
     return {
       valid: false,
-      error: `Insufficient coins. Available balance: ${availableCoins.toLocaleString()} coins.`,
+      error: `Only winning prize coins can be redeemed. Redeemable winning balance: ${redeemableWinning.toLocaleString()} coins (₹${calculateRupeesFromCoins(redeemableWinning)}).`,
     };
   }
 
@@ -217,9 +261,6 @@ export function isCosmeticUnlocked(
   item: CosmeticItem,
   profile: Pick<UserProfile, 'tournamentsJoined' | 'totalKills' | 'totalWins' | 'unlockedCosmetics'>
 ): boolean {
-  if (item.rewardedAdUnlock) {
-    return Boolean(profile.unlockedCosmetics?.includes(item.id));
-  }
   if (item.unlockThreshold <= 0) return true;
   if (profile.unlockedCosmetics?.includes(item.id)) return true;
   if (!item.unlockMetric) return true;
@@ -263,24 +304,4 @@ export function getPlayerLeaderboardRank(
   const sorted = sortLeaderboard(entries, scope);
   const index = sorted.findIndex((entry) => entry.userId === userId);
   return index === -1 ? null : index + 1;
-}
-
-// AdMob policy-compliant frequency gating
-export const INTERSTITIAL_COOLDOWN_MS = 90_000;
-
-export function canShowInterstitial(params: {
-  lastShownAtMs: number;
-  nowMs?: number;
-  cooldownMs?: number;
-  isLiveMatchOrJoining: boolean;
-}): boolean {
-  const {
-    lastShownAtMs,
-    nowMs = Date.now(),
-    cooldownMs = INTERSTITIAL_COOLDOWN_MS,
-    isLiveMatchOrJoining,
-  } = params;
-  if (isLiveMatchOrJoining) return false;
-  if (lastShownAtMs <= 0) return true;
-  return nowMs - lastShownAtMs >= cooldownMs;
 }

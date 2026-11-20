@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Award, CheckCircle2, Coins, Crown, Search, Shield, Swords, Trophy } from 'lucide-react';
 import type {
-  AdminSettings,
   Registration,
   Tournament,
   TournamentCategory,
@@ -10,7 +9,6 @@ import type {
 } from '../types/esports';
 import { BRAND_ASSETS } from '../lib/seedData';
 import { buildPlayedMatchesWithResults, findPlayerStanding } from '../utils/resultHelpers';
-import { AdMobBannerSlot } from './AdMobUnits';
 
 interface ResultsViewProps {
   results: TournamentResult[];
@@ -18,7 +16,6 @@ interface ResultsViewProps {
   registrations: Registration[];
   profile: UserProfile | null;
   currentUserId?: string;
-  adminSettings: AdminSettings;
   onSelectTournament: (t: Tournament) => void;
   onOpenAuth: () => void;
 }
@@ -29,7 +26,6 @@ export function ResultsView({
   registrations,
   profile,
   currentUserId,
-  adminSettings,
   onSelectTournament,
   onOpenAuth,
 }: ResultsViewProps) {
@@ -169,7 +165,7 @@ export function ResultsView({
         </div>
 
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter results by category">
-          {(['All', 'Battle Royale', 'Clash Squad', 'Lone Wolf'] as const).map((cat) => (
+          {(['All', 'Battle Royale', 'Clash Squad', 'Lone Wolf', 'Custom'] as const).map((cat) => (
             <button
               key={cat}
               type="button"
@@ -429,12 +425,6 @@ export function ResultsView({
           })}
         </div>
       )}
-
-      <AdMobBannerSlot
-        settings={adminSettings}
-        screen="results"
-        placementLabel="Results Page Footer"
-      />
     </div>
   );
 }

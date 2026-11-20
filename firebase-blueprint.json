@@ -2,7 +2,7 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "Public player profile, competitive statistics, and single Spider Coin balance for SPIDER ESPORTS.",
+      "description": "Public player profile, competitive statistics, and Spider Coin wallet (separating redeemable winningCoins from non-redeemable added coins).",
       "type": "object",
       "properties": {
         "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
@@ -19,6 +19,9 @@
         "totalKills": { "type": "number" },
         "totalPoints": { "type": "number" },
         "coins": { "type": "number" },
+        "winningCoins": { "type": "number" },
+        "lastDepositUtr": { "type": "string", "minLength": 12, "maxLength": 12, "pattern": "^[0-9]{12}$" },
+        "lastEntryTournamentId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "unlockedCosmetics": { "type": "array" },
         "achievements": { "type": "array" },
         "suspended": { "type": "boolean" },
@@ -56,13 +59,13 @@
     },
     "Tournament": {
       "title": "Tournament",
-      "description": "Free Free Fire community tournament event with Spider Coin rewards.",
+      "description": "Free Fire community tournament event (free or coin entry fee) with Spider Coin prize pools and standard or custom modes.",
       "type": "object",
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "title": { "type": "string", "minLength": 3, "maxLength": 100 },
-        "category": { "type": "string", "enum": ["Battle Royale", "Clash Squad", "Lone Wolf"] },
-        "mode": { "type": "string", "enum": ["Solo", "Duo", "Squad", "CS 1v1", "CS 2v2", "CS 4v4", "Lone Wolf 1v1", "Lone Wolf 2v2"] },
+        "category": { "type": "string", "enum": ["Battle Royale", "Clash Squad", "Lone Wolf", "Custom"] },
+        "mode": { "type": "string", "minLength": 2, "maxLength": 48 },
         "mapName": { "type": "string", "minLength": 2, "maxLength": 48 },
         "bannerUrl": { "type": "string", "maxLength": 200000 },
         "matchDate": { "type": "string", "maxLength": 32 },
@@ -75,6 +78,7 @@
         "featured": { "type": "boolean" },
         "published": { "type": "boolean" },
         "rules": { "type": "array" },
+        "entryFeeCoins": { "type": "number" },
         "coinReward": { "type": "number" },
         "perKillCoins": { "type": "number" },
         "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
@@ -85,7 +89,7 @@
     },
     "Registration": {
       "title": "Registration",
-      "description": "Player or team registration for a free tournament.",
+      "description": "Player or team registration for a free or entry-fee tournament.",
       "type": "object",
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[a-zA-Z0-9_\\-]+$" },
@@ -97,6 +101,8 @@
         "teamName": { "type": "string", "maxLength": 40 },
         "teammates": { "type": "array" },
         "slotNumber": { "type": "number" },
+        "entryFeePaid": { "type": "number" },
+        "entryWinningCoinsPaid": { "type": "number" },
         "status": { "type": "string", "enum": ["confirmed", "cancelled"] },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -111,7 +117,7 @@
         "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "tournamentId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "title": { "type": "string", "minLength": 3, "maxLength": 100 },
-        "mode": { "type": "string", "maxLength": 32 },
+        "mode": { "type": "string", "minLength": 2, "maxLength": 48 },
         "status": { "type": "string", "enum": ["scheduled", "room_ready", "live", "completed", "cancelled"] },
         "credentialsPublished": { "type": "boolean" },
         "credentialsReleaseAt": { "type": "string", "format": "date-time" },
@@ -171,7 +177,7 @@
     },
     "WithdrawalRequest": {
       "title": "WithdrawalRequest",
-      "description": "Player Spider Coin withdrawal request converted at 100 coins = ₹10.",
+      "description": "Player winning-prize Spider Coin withdrawal request converted at 1 coin = ₹1 (minimum ₹50).",
       "type": "object",
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
@@ -189,6 +195,28 @@
       },
       "required": ["id", "userId", "username", "freeFireUid", "coins", "rupees", "method", "destination", "status", "createdAt", "updatedAt"]
     },
+    "CoinDeposit": {
+      "title": "CoinDeposit",
+      "description": "Inside-verified QR UPI coin deposit keyed by unique 12-digit UTR number (₹1 = 1 coin).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 12, "maxLength": 12, "pattern": "^[0-9]{12}$" },
+        "utr": { "type": "string", "minLength": 12, "maxLength": 12, "pattern": "^[0-9]{12}$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "freeFireUid": { "type": "string", "minLength": 6, "maxLength": 16, "pattern": "^[0-9]+$" },
+        "rupees": { "type": "number" },
+        "coins": { "type": "number" },
+        "payerUpi": { "type": "string", "maxLength": 100 },
+        "screenshotUrl": { "type": "string", "maxLength": 200000 },
+        "status": { "type": "string", "enum": ["verified", "rejected"] },
+        "verificationNote": { "type": "string", "minLength": 3, "maxLength": 200 },
+        "adminNote": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "utr", "userId", "username", "freeFireUid", "rupees", "coins", "status", "verificationNote", "createdAt", "updatedAt"]
+    },
     "NotificationItem": {
       "title": "NotificationItem",
       "description": "Targeted or broadcast tournament notification.",
@@ -198,7 +226,7 @@
         "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "title": { "type": "string", "minLength": 2, "maxLength": 100 },
         "body": { "type": "string", "minLength": 2, "maxLength": 300 },
-        "type": { "type": "string", "enum": ["tournament", "registration", "room", "reminder", "cancellation", "result", "achievement", "withdrawal", "system"] },
+        "type": { "type": "string", "enum": ["tournament", "registration", "room", "reminder", "cancellation", "result", "achievement", "withdrawal", "deposit", "system"] },
         "tournamentId": { "type": "string", "maxLength": 128 },
         "read": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
@@ -221,26 +249,20 @@
     },
     "AdminSettings": {
       "title": "AdminSettings",
-      "description": "Platform configuration, AdMob unit IDs, ad controls, and promotional banner settings.",
+      "description": "Platform configuration, uploaded Payment QR image, UPI metadata, Telegram support link, and promotional banner settings.",
       "type": "object",
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
-        "adMobMode": { "type": "string", "enum": ["test", "production"] },
-        "adMobAppId": { "type": "string", "maxLength": 128 },
-        "adSenseClientId": { "type": "string", "maxLength": 128 },
-        "bannerAdUnitId": { "type": "string", "maxLength": 128 },
-        "interstitialAdUnitId": { "type": "string", "maxLength": 128 },
-        "rewardedAdUnitId": { "type": "string", "maxLength": 128 },
-        "bannerAdsEnabled": { "type": "boolean" },
-        "interstitialAdsEnabled": { "type": "boolean" },
-        "rewardedAdsEnabled": { "type": "boolean" },
-        "interstitialCooldownSeconds": { "type": "number" },
-        "bannerPlacement": { "type": "string", "enum": ["all_screens", "home_and_matches", "home_only"] },
+        "paymentQrDataUrl": { "type": "string", "maxLength": 200000 },
+        "paymentUpiId": { "type": "string", "maxLength": 100 },
+        "paymentReceiverName": { "type": "string", "maxLength": 80 },
+        "telegramSupportUrl": { "type": "string", "maxLength": 160 },
+        "telegramSupportLabel": { "type": "string", "maxLength": 80 },
         "featuredAnnouncement": { "type": "string", "maxLength": 200 },
         "maintenanceMode": { "type": "boolean" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "adMobMode", "bannerAdUnitId", "interstitialAdUnitId", "rewardedAdUnitId", "maintenanceMode", "updatedAt"]
+      "required": ["id", "maintenanceMode", "updatedAt"]
     }
   },
   "firestore": {
@@ -282,7 +304,11 @@
     },
     "/withdrawals/{withdrawalId}": {
       "schema": { "$ref": "#/entities/WithdrawalRequest" },
-      "description": "Spider Coin withdrawal requests (100 coins = ₹10)."
+      "description": "Spider Coin withdrawal requests (1 coin = ₹1, min ₹50)."
+    },
+    "/coin_deposits/{depositId}": {
+      "schema": { "$ref": "#/entities/CoinDeposit" },
+      "description": "Single-use 12-digit UTR verified QR coin deposits (₹1 = 1 coin)."
     },
     "/notifications/{notificationId}": {
       "schema": { "$ref": "#/entities/NotificationItem" },
@@ -294,7 +320,7 @@
     },
     "/admin_settings/{settingId}": {
       "schema": { "$ref": "#/entities/AdminSettings" },
-      "description": "Admin-controlled AdMob IDs and platform configuration."
+      "description": "Admin-controlled Payment QR and platform configuration."
     }
   }
 }

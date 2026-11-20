@@ -6,14 +6,18 @@ import {
   Coins,
   Database,
   Edit3,
+  ExternalLink,
   FileCheck2,
   Image as ImageIcon,
   KeyRound,
   Megaphone,
+  MessageCircle,
   Plus,
+  QrCode,
   Send,
   Settings,
   Shield,
+  Shuffle,
   Trash2,
   Trophy,
   Upload,
@@ -21,8 +25,8 @@ import {
   Wallet,
 } from 'lucide-react';
 import type {
-  AdBannerPlacement,
   AdminSettings,
+  CoinDeposit,
   NotificationItem,
   Registration,
   ResultStanding,
@@ -37,13 +41,22 @@ import type {
 } from '../types/esports';
 import {
   CATEGORIES_WITH_MODES,
+  formatEntryFeeLabel,
   getModeDefinition,
+  getTournamentEntryFee,
   isStrictSoleAdminSession,
+  MAX_ENTRY_FEE_COINS,
+  MAX_PER_KILL_COINS,
+  MAX_PRIZE_POOL_COINS,
   MAX_TOURNAMENT_SLOTS,
   MIN_TOURNAMENT_SLOTS,
+  pickRandomCustomModeName,
   SOLE_ADMIN_EMAIL,
   validateAdminPassword,
   validateAdminSlotUpdate,
+  validateCustomModeName,
+  validateEntryFeeCoins,
+  validatePrizePoolCoins,
   validateSlotAssignment,
   validateTournamentBannerUrl,
 } from '../utils/tournamentRules';
@@ -51,27 +64,11 @@ import {
   calculateMatchCoinReward,
   calculateRupeesFromCoins,
   formatRupees,
+  getRedeemableWinningCoins,
+  MIN_WITHDRAWAL_COINS,
+  MIN_WITHDRAWAL_RUPEES,
 } from '../utils/coinSystem';
 import { validateResultStandings } from '../utils/resultHelpers';
-import {
-  ADMOB_OFFICIAL_TEST_IDS,
-  ADMOB_PRODUCTION_CREDENTIALS,
-  buildAppAdsTxtLine,
-  DEFAULT_INTERSTITIAL_COOLDOWN_SECONDS,
-  MAX_INTERSTITIAL_COOLDOWN_SECONDS,
-  MIN_INTERSTITIAL_COOLDOWN_SECONDS,
-  validateAdMobAppId,
-  validateAdMobUnitId,
-  validateAdSenseClientId,
-  validateInterstitialCooldownSeconds,
-} from '../utils/admobHelpers';
-import {
-  detectAdMobRuntime,
-  getAdMobIntegrationStatus,
-  getAdMobRuntimeLabel,
-  subscribeAdMobStatus,
-  type AdMobIntegrationStatus,
-} from '../lib/admobBridge';
 import {
   adminAdjustUserCoins,
   adminDeleteMatchResult,
@@ -81,9 +78,11 @@ import {
   adminPublishAnnouncement,
   adminPublishMatchResult,
   adminPublishRoomCredentials,
+  adminRejectCoinDeposit,
   adminRemoveRegistration,
   adminSaveTournament,
   adminSendNotification,
+  adminSubscribeCoinDeposits,
   adminSubscribeWithdrawals,
   adminToggleUserSuspension,
   adminUpdateRegistrationSlot,
@@ -98,8 +97,16 @@ import { BRAND_ASSETS, MATCH_BANNER_PRESETS, resolveBundledAssetUrl } from '../l
 import {
   ALLOWED_IMAGE_INPUT_ACCEPT,
   compressImageFileToDataUrl,
+  compressQrImageFileToDataUrl,
   estimateDataUrlSizeKb,
 } from '../utils/imageUpload';
+import {
+  getTelegramSupportInfo,
+  normalizeAndValidateTelegramSupport,
+  TELEGRAM_SUPPORT_MAX_LABEL_LENGTH,
+  TELEGRAM_SUPPORT_MAX_URL_LENGTH,
+  validateTelegramSupportLabel,
+} from '../utils/supportConfig';
 
 interface AdminDashboardProps {
   adminUid: string;
@@ -153,12 +160,15 @@ export function AdminDashboard({
   const [maxSlots, setMaxSlots] = useState(12);
   const [filledSlots, setFilledSlots] = useState(0);
   const [bannerUrl, setBannerUrl] = useState(BRAND_ASSETS.battleRoyaleBanner);
+  const [entryFeeCoins, setEntryFeeCoins] = useState(0);
   const [coinReward, setCoinReward] = useState(300);
   const [perKillCoins, setPerKillCoins] = useState(10);
   const [status, setStatus] = useState<TournamentStatus>('upcoming');
   const [published, setPublished] = useState(true);
   const [featured, setFeatured] = useState(false);
-  const [rulesText, setRulesText] = useState('Free entry community match\nNo emulators allowed');
+  const [rulesText, setRulesText] = useState(
+    'Mobile devices only — no emulators allowed\nJoin custom room 10 minutes before match time'
+  );
 
   // Inline Bracket Slot & Picture Drafts (filledSlots updates automatically via player joins)
   const [slotDrafts, setSlotDrafts] = useState<Record<string, number>>({});
@@ -174,13 +184,17 @@ export function AdminDashboard({
   // Player Coin Adjustment State
   const [coinDrafts, setCoinDrafts] = useState<Record<string, string>>({});
   const [coinReasons, setCoinReasons] = useState<Record<string, string>>({});
+  const [coinTypes, setCoinTypes] = useState<Record<string, 'winning' | 'bonus'>>({});
   const [savingCoinUid, setSavingCoinUid] = useState<string | null>(null);
 
-  // Withdrawals State
+  // Withdrawals & QR Coin Deposits State
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [withdrawalFilter, setWithdrawalFilter] = useState<'all' | WithdrawalStatus>('all');
   const [withdrawalNotes, setWithdrawalNotes] = useState<Record<string, string>>({});
   const [processingWdId, setProcessingWdId] = useState<string | null>(null);
+  const [coinDeposits, setCoinDeposits] = useState<CoinDeposit[]>([]);
+  const [depositNotes, setDepositNotes] = useState<Record<string, string>>({});
+  const [processingDepositId, setProcessingDepositId] = useState<string | null>(null);
 
   // Room & Results State
   const [selectedMatchId, setSelectedMatchId] = useState<string>(tournaments[0]?.id || '');
@@ -206,56 +220,34 @@ export function AdminDashboard({
   const [notifBody, setNotifBody] = useState('');
   const [notifType, setNotifType] = useState<NotificationItem['type']>('tournament');
 
-  // AdMob Settings State
-  const [adMobMode, setAdMobMode] = useState<'test' | 'production'>(adminSettings.adMobMode);
-  const [adMobAppId, setAdMobAppId] = useState(
-    adminSettings.adMobAppId || ADMOB_OFFICIAL_TEST_IDS.appId
-  );
-  const [adSenseClientId, setAdSenseClientId] = useState(adminSettings.adSenseClientId || '');
-  const [bannerUnit, setBannerUnit] = useState(adminSettings.bannerAdUnitId);
-  const [interstitialUnit, setInterstitialUnit] = useState(adminSettings.interstitialAdUnitId);
-  const [rewardedUnit, setRewardedUnit] = useState(adminSettings.rewardedAdUnitId);
-  const [bannerAdsEnabled, setBannerAdsEnabled] = useState<boolean>(
-    adminSettings.bannerAdsEnabled !== false
-  );
-  const [interstitialAdsEnabled, setInterstitialAdsEnabled] = useState<boolean>(
-    adminSettings.interstitialAdsEnabled !== false
-  );
-  const [rewardedAdsEnabled, setRewardedAdsEnabled] = useState<boolean>(
-    adminSettings.rewardedAdsEnabled !== false
-  );
-  const [interstitialCooldownSeconds, setInterstitialCooldownSeconds] = useState<number>(
-    adminSettings.interstitialCooldownSeconds ?? DEFAULT_INTERSTITIAL_COOLDOWN_SECONDS
-  );
-  const [bannerPlacement, setBannerPlacement] = useState<AdBannerPlacement>(
-    adminSettings.bannerPlacement || 'all_screens'
+  // Payment QR & App Settings State
+  const [paymentQrDataUrl, setPaymentQrDataUrl] = useState(adminSettings.paymentQrDataUrl || '');
+  const [paymentUpiId, setPaymentUpiId] = useState(adminSettings.paymentUpiId || '');
+  const [paymentReceiverName, setPaymentReceiverName] = useState(
+    adminSettings.paymentReceiverName || ''
   );
   const [featuredAnn, setFeaturedAnn] = useState(adminSettings.featuredAnnouncement || '');
-  const [adMobError, setAdMobError] = useState<string | null>(null);
-  const [copiedAppAdsTxt, setCopiedAppAdsTxt] = useState(false);
-  const [adMobStatus, setAdMobStatus] = useState<AdMobIntegrationStatus>(() =>
-    getAdMobIntegrationStatus()
+  const [uploadingQr, setUploadingQr] = useState(false);
+  const [qrSettingsError, setQrSettingsError] = useState<string | null>(null);
+  const [savingQrSettings, setSavingQrSettings] = useState(false);
+
+  // Telegram Customer Support Settings State
+  const [telegramSupportUrlInput, setTelegramSupportUrlInput] = useState(
+    adminSettings.telegramSupportUrl || ''
   );
+  const [telegramSupportLabelInput, setTelegramSupportLabelInput] = useState(
+    adminSettings.telegramSupportLabel || ''
+  );
+  const [telegramSupportError, setTelegramSupportError] = useState<string | null>(null);
+  const [savingTelegramSupport, setSavingTelegramSupport] = useState(false);
 
   useEffect(() => {
-    return subscribeAdMobStatus(setAdMobStatus);
-  }, []);
-
-  useEffect(() => {
-    setAdMobMode(adminSettings.adMobMode);
-    setAdMobAppId(adminSettings.adMobAppId || ADMOB_OFFICIAL_TEST_IDS.appId);
-    setAdSenseClientId(adminSettings.adSenseClientId || '');
-    setBannerUnit(adminSettings.bannerAdUnitId);
-    setInterstitialUnit(adminSettings.interstitialAdUnitId);
-    setRewardedUnit(adminSettings.rewardedAdUnitId);
-    setBannerAdsEnabled(adminSettings.bannerAdsEnabled !== false);
-    setInterstitialAdsEnabled(adminSettings.interstitialAdsEnabled !== false);
-    setRewardedAdsEnabled(adminSettings.rewardedAdsEnabled !== false);
-    setInterstitialCooldownSeconds(
-      adminSettings.interstitialCooldownSeconds ?? DEFAULT_INTERSTITIAL_COOLDOWN_SECONDS
-    );
-    setBannerPlacement(adminSettings.bannerPlacement || 'all_screens');
+    setPaymentQrDataUrl(adminSettings.paymentQrDataUrl || '');
+    setPaymentUpiId(adminSettings.paymentUpiId || '');
+    setPaymentReceiverName(adminSettings.paymentReceiverName || '');
     setFeaturedAnn(adminSettings.featuredAnnouncement || '');
+    setTelegramSupportUrlInput(adminSettings.telegramSupportUrl || '');
+    setTelegramSupportLabelInput(adminSettings.telegramSupportLabel || '');
   }, [adminSettings]);
 
   useEffect(() => {
@@ -332,8 +324,12 @@ export function AdminDashboard({
 
   useEffect(() => {
     if (!isSoleOwner) return;
-    const unsub = adminSubscribeWithdrawals(setWithdrawals);
-    return () => unsub();
+    const unsubWithdrawals = adminSubscribeWithdrawals(setWithdrawals);
+    const unsubDeposits = adminSubscribeCoinDeposits(setCoinDeposits);
+    return () => {
+      unsubWithdrawals();
+      unsubDeposits();
+    };
   }, [isSoleOwner]);
 
   const loadUsers = async () => {
@@ -370,12 +366,15 @@ export function AdminDashboard({
     setMaxSlots(12);
     setFilledSlots(0);
     setBannerUrl(BRAND_ASSETS.battleRoyaleBanner);
+    setEntryFeeCoins(0);
     setCoinReward(300);
     setPerKillCoins(10);
     setStatus('upcoming');
     setPublished(true);
     setFeatured(false);
-    setRulesText('Free entry community match\nNo emulators allowed');
+    setRulesText(
+      'Mobile devices only — no emulators allowed\nJoin custom room 10 minutes before match time'
+    );
   };
 
   const handleEditTournament = (t: Tournament) => {
@@ -392,6 +391,7 @@ export function AdminDashboard({
     setFilledSlots(t.filledSlots);
     setBannerUrl(resolveBundledAssetUrl(t.bannerUrl, getDefaultCategoryBanner(t.category)));
     setFormBannerError(null);
+    setEntryFeeCoins(getTournamentEntryFee(t));
     setCoinReward(t.coinReward);
     setPerKillCoins(t.perKillCoins);
     setStatus(t.status);
@@ -402,6 +402,27 @@ export function AdminDashboard({
 
   const handleSaveTournament = async (e: React.FormEvent) => {
     e.preventDefault();
+    const modeCheck = validateCustomModeName(String(mode));
+    if (!modeCheck.valid) {
+      onToast(modeCheck.error);
+      return;
+    }
+
+    const feeCheck = validateEntryFeeCoins(Math.floor(Number(entryFeeCoins)));
+    if (!feeCheck.valid) {
+      onToast(feeCheck.error);
+      return;
+    }
+
+    const prizeCheck = validatePrizePoolCoins(
+      Math.floor(Number(coinReward)),
+      Math.floor(Number(perKillCoins))
+    );
+    if (!prizeCheck.valid) {
+      onToast(prizeCheck.error);
+      return;
+    }
+
     const nextMax = Number(maxSlots);
     const liveFilled = editingId ? filledSlots : 0;
     const slotValidation = validateAdminSlotUpdate(nextMax, liveFilled);
@@ -424,7 +445,7 @@ export function AdminDashboard({
           id,
           title: title.trim(),
           category,
-          mode,
+          mode: modeCheck.mode,
           mapName: mapName.trim(),
           bannerUrl: bannerValidation.bannerUrl,
           matchDate,
@@ -440,8 +461,9 @@ export function AdminDashboard({
             .split('\n')
             .map((r) => r.trim())
             .filter(Boolean),
-          coinReward: Math.max(0, Math.floor(Number(coinReward))),
-          perKillCoins: Math.max(0, Math.floor(Number(perKillCoins))),
+          entryFeeCoins: feeCheck.entryFeeCoins,
+          coinReward: prizeCheck.coinReward,
+          perKillCoins: prizeCheck.perKillCoins,
           createdBy: adminUid,
         },
         !editingId
@@ -550,17 +572,21 @@ export function AdminDashboard({
 
   const handleAdjustCoins = async (user: UserProfile) => {
     const rawDelta = Number(coinDrafts[user.uid]);
-    const reason = coinReasons[user.uid] || 'Match reward credited by admin';
+    const coinType = coinTypes[user.uid] ?? 'winning';
+    const reason = coinReasons[user.uid] || 'Match prize credited by admin';
     setSavingCoinUid(user.uid);
     try {
-      const nextBalance = await adminAdjustUserCoins({
+      const result = await adminAdjustUserCoins({
         userId: user.uid,
         deltaCoins: rawDelta,
         reason,
+        coinType,
       });
       setCoinDrafts((prev) => ({ ...prev, [user.uid]: '' }));
       setCoinReasons((prev) => ({ ...prev, [user.uid]: '' }));
-      onToast(`${user.username} wallet updated to ${nextBalance.toLocaleString()} coins.`);
+      onToast(
+        `${user.username} wallet updated: ${result.nextCoins.toLocaleString()} total (${result.nextWinningCoins.toLocaleString()} winning prize).`
+      );
       await loadUsers();
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Unable to adjust coins.');
@@ -589,6 +615,43 @@ export function AdminDashboard({
       onToast(err instanceof Error ? err.message : 'Unable to process withdrawal.');
     } finally {
       setProcessingWdId(null);
+    }
+  };
+
+  const handleRejectCoinDeposit = async (deposit: CoinDeposit) => {
+    setProcessingDepositId(deposit.id);
+    try {
+      await adminRejectCoinDeposit({
+        deposit,
+        adminNote: depositNotes[deposit.id] || '',
+      });
+      onToast(
+        `Reversed deposit UTR ${deposit.utr} and deducted ${deposit.coins.toLocaleString()} coins from ${deposit.username}.`
+      );
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Unable to reverse coin deposit.');
+    } finally {
+      setProcessingDepositId(null);
+    }
+  };
+
+  const handleQrFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setQrSettingsError(null);
+    setUploadingQr(true);
+    try {
+      const result = await compressQrImageFileToDataUrl(file);
+      setPaymentQrDataUrl(result.dataUrl);
+      onToast(`Payment QR prepared (${result.width}x${result.height}, ~${result.approxKb} KB). Click Save QR Settings to publish.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to process Payment QR image.';
+      setQrSettingsError(msg);
+      onToast(msg);
+    } finally {
+      setUploadingQr(false);
     }
   };
 
@@ -761,7 +824,7 @@ export function AdminDashboard({
             SPIDER ESPORTS Admin Console
           </h1>
           <p className="text-xs text-zinc-400 mt-1">
-            Owner-locked control center ({SOLE_ADMIN_EMAIL}) for tournaments, live slots, Spider Coins, withdrawals, rooms, and AdMob.
+            Owner-locked control center ({SOLE_ADMIN_EMAIL}) for tournaments, live slots, Spider Coins, withdrawals, QR deposits, and rooms.
           </p>
         </div>
 
@@ -786,11 +849,11 @@ export function AdminDashboard({
               id: 'withdrawals',
               label:
                 pendingWithdrawalsCount > 0
-                  ? `Withdrawals (${pendingWithdrawalsCount})`
-                  : 'Withdrawals',
+                  ? `Wallet & Payouts (${pendingWithdrawalsCount})`
+                  : 'Wallet & Payouts',
               icon: Wallet,
             },
-            { id: 'app', label: 'Alerts & AdMob', icon: Settings },
+            { id: 'app', label: 'Alerts & QR Settings', icon: Settings },
           ] as const
         ).map((tab) => {
           const Icon = tab.icon;
@@ -824,7 +887,7 @@ export function AdminDashboard({
           >
             <div className="flex items-center justify-between">
               <h2 className="font-display text-xl font-bold text-white">
-                {editingId ? 'Edit Tournament' : 'Create Free Tournament'}
+                {editingId ? 'Edit Tournament' : 'Create Tournament'}
               </h2>
               {editingId && (
                 <button
@@ -852,7 +915,7 @@ export function AdminDashboard({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label htmlFor="adm-cat" className="block text-xs text-zinc-300 mb-1">
                   Category
@@ -864,9 +927,18 @@ export function AdminDashboard({
                     const nextCat = e.target.value as TournamentCategory;
                     const prevDefault = getDefaultCategoryBanner(category);
                     setCategory(nextCat);
-                    const firstMode = CATEGORIES_WITH_MODES[nextCat][0];
-                    setMode(firstMode);
-                    setMaxSlots(getModeDefinition(firstMode).defaultMaxSlots);
+                    if (nextCat === 'Custom') {
+                      const nextCustomMode =
+                        category === 'Custom' && String(mode).trim()
+                          ? mode
+                          : pickRandomCustomModeName();
+                      setMode(nextCustomMode);
+                      setMaxSlots(getModeDefinition(nextCustomMode).defaultMaxSlots);
+                    } else {
+                      const firstMode = CATEGORIES_WITH_MODES[nextCat][0];
+                      setMode(firstMode);
+                      setMaxSlots(getModeDefinition(firstMode).defaultMaxSlots);
+                    }
                     if (!editingId && bannerUrl === prevDefault) {
                       setBannerUrl(getDefaultCategoryBanner(nextCat));
                     }
@@ -876,28 +948,54 @@ export function AdminDashboard({
                   <option value="Battle Royale">Battle Royale</option>
                   <option value="Clash Squad">Clash Squad</option>
                   <option value="Lone Wolf">Lone Wolf</option>
+                  <option value="Custom">Custom / Random Mode</option>
                 </select>
               </div>
               <div>
                 <label htmlFor="adm-mode" className="block text-xs text-zinc-300 mb-1">
-                  Mode
+                  {category === 'Custom' ? 'Custom Mode Name' : 'Mode'}
                 </label>
-                <select
-                  id="adm-mode"
-                  value={mode}
-                  onChange={(e) => {
-                    const nextMode = e.target.value as TournamentMode;
-                    setMode(nextMode);
-                    setMaxSlots(getModeDefinition(nextMode).defaultMaxSlots);
-                  }}
-                  className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
-                >
-                  {CATEGORIES_WITH_MODES[category].map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
+                {category === 'Custom' ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="adm-mode"
+                      type="text"
+                      required
+                      minLength={2}
+                      maxLength={48}
+                      value={mode}
+                      onChange={(e) => setMode(e.target.value)}
+                      placeholder="e.g. Sniper Only 1v1"
+                      className="min-w-0 flex-1 min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMode(pickRandomCustomModeName(String(mode)))}
+                      title="Pick random mode name"
+                      className="min-h-[42px] px-3 py-2 rounded-lg border border-white/15 bg-[#09090B] hover:bg-white/5 text-xs font-semibold text-zinc-200 inline-flex items-center gap-1 shrink-0"
+                    >
+                      <Shuffle className="w-3.5 h-3.5 text-[#F43F5E]" />
+                      Random
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    id="adm-mode"
+                    value={mode}
+                    onChange={(e) => {
+                      const nextMode = e.target.value as TournamentMode;
+                      setMode(nextMode);
+                      setMaxSlots(getModeDefinition(nextMode).defaultMaxSlots);
+                    }}
+                    className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
+                  >
+                    {CATEGORIES_WITH_MODES[category].map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
 
@@ -1004,16 +1102,56 @@ export function AdminDashboard({
               </div>
             </div>
 
+            {/* Entry Fee & Prize Pool */}
+            <div className="rounded-lg border border-white/10 bg-[#09090B] p-3 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <label htmlFor="adm-entry-fee" className="text-xs font-medium text-zinc-200">
+                  Entry Fee (Coins · ₹)
+                </label>
+                <span className="text-[11px] font-semibold tabular-nums text-amber-300">
+                  {entryFeeCoins === 0 ? 'FREE (0 Coins)' : formatEntryFeeLabel(entryFeeCoins)}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[0, 10, 20, 50, 100].map((presetFee) => (
+                  <button
+                    key={presetFee}
+                    type="button"
+                    onClick={() => setEntryFeeCoins(presetFee)}
+                    className={`min-h-[32px] px-2.5 py-1 rounded text-[11px] font-semibold border transition-colors ${
+                      entryFeeCoins === presetFee
+                        ? 'bg-[#E11D48]/25 border-[#E11D48] text-white'
+                        : 'bg-[#121216] border-white/10 text-zinc-300 hover:text-white'
+                    }`}
+                  >
+                    {presetFee === 0 ? 'Free (0)' : `${presetFee} (₹${presetFee})`}
+                  </button>
+                ))}
+              </div>
+              <input
+                id="adm-entry-fee"
+                type="number"
+                min={0}
+                max={MAX_ENTRY_FEE_COINS}
+                value={entryFeeCoins}
+                onChange={(e) => setEntryFeeCoins(Number(e.target.value))}
+                className="w-full min-h-[40px] px-3 py-1.5 rounded-lg border border-white/10 bg-[#121216] text-sm font-mono-tabular text-white"
+              />
+              <p className="text-[11px] text-zinc-400">
+                Set 0 to keep this match Free, or enter any Spider Coin entry fee (1 Coin = ₹1).
+              </p>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label htmlFor="adm-coins" className="block text-xs text-zinc-300 mb-1">
-                  1st Position Coins (Win Bonus)
+                  1st Position Prize Pool (Coins)
                 </label>
                 <input
                   id="adm-coins"
                   type="number"
                   min={0}
-                  max={100000}
+                  max={MAX_PRIZE_POOL_COINS}
                   value={coinReward}
                   onChange={(e) => setCoinReward(Number(e.target.value))}
                   className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
@@ -1027,7 +1165,7 @@ export function AdminDashboard({
                   id="adm-kill-coins"
                   type="number"
                   min={0}
-                  max={10000}
+                  max={MAX_PER_KILL_COINS}
                   value={perKillCoins}
                   onChange={(e) => setPerKillCoins(Number(e.target.value))}
                   className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
@@ -1145,7 +1283,7 @@ export function AdminDashboard({
               type="submit"
               className="w-full min-h-[46px] rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] text-xs font-semibold text-white"
             >
-              {editingId ? 'Save Tournament Changes' : 'Publish Free Tournament'}
+              {editingId ? 'Save Tournament Changes' : 'Publish Tournament'}
             </button>
           </form>
 
@@ -1167,6 +1305,7 @@ export function AdminDashboard({
                 const draftBanner = bannerDrafts[t.id] ?? currentBanner;
                 const isBannerDirty = draftBanner.trim() !== currentBanner;
                 const isUploadingInline = uploadingInlineBannerId === t.id;
+                const tEntryFee = getTournamentEntryFee(t);
                 return (
                   <div key={t.id} className="py-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
@@ -1180,7 +1319,7 @@ export function AdminDashboard({
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-white truncate">{t.title}</p>
                           <p className="text-xs text-zinc-400 tabular-nums">
-                            {t.category} · {t.mode} · {t.filledSlots}/{t.maxSlots} joined · +{t.coinReward} Coins · {t.status}
+                            {t.category} · {t.mode} · Entry: {formatEntryFeeLabel(tEntryFee, true)} · Prize: +{t.coinReward.toLocaleString()} Coins · {t.filledSlots}/{t.maxSlots} joined · {t.status}
                           </p>
                         </div>
                       </div>
@@ -1801,7 +1940,7 @@ export function AdminDashboard({
                         </p>
                         <p className="text-amber-400 font-semibold font-mono-tabular mt-0.5 inline-flex items-center gap-1">
                           <Coins className="w-3.5 h-3.5" />
-                          {u.coins.toLocaleString()} Coins ({formatRupees(calculateRupeesFromCoins(u.coins))})
+                          {u.coins.toLocaleString()} Total · {getRedeemableWinningCoins(u).toLocaleString()} Winning Prize ({formatRupees(calculateRupeesFromCoins(getRedeemableWinningCoins(u)))})
                         </p>
                       </div>
                       <button
@@ -1831,6 +1970,20 @@ export function AdminDashboard({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 rounded-lg bg-[#09090B] border border-white/10 p-2.5">
+                      <select
+                        aria-label={`Coin type for ${u.username}`}
+                        value={coinTypes[u.uid] ?? 'winning'}
+                        onChange={(e) =>
+                          setCoinTypes((prev) => ({
+                            ...prev,
+                            [u.uid]: e.target.value as 'winning' | 'bonus',
+                          }))
+                        }
+                        className="min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs text-white"
+                      >
+                        <option value="winning">Winning Prize (Redeemable)</option>
+                        <option value="bonus">Bonus / Added (Non-Redeemable)</option>
+                      </select>
                       <input
                         type="number"
                         aria-label={`Coins to credit ${u.username}`}
@@ -1839,7 +1992,7 @@ export function AdminDashboard({
                           setCoinDrafts((prev) => ({ ...prev, [u.uid]: e.target.value }))
                         }
                         placeholder="+Coins (e.g. 200)"
-                        className="w-32 min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs font-mono-tabular text-white"
+                        className="w-28 min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs font-mono-tabular text-white"
                       />
                       <input
                         type="text"
@@ -1848,8 +2001,8 @@ export function AdminDashboard({
                         onChange={(e) =>
                           setCoinReasons((prev) => ({ ...prev, [u.uid]: e.target.value }))
                         }
-                        placeholder="Reason (e.g. 5 Kills + Match Play)"
-                        className="flex-1 min-w-[160px] min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs text-white"
+                        placeholder="Reason (e.g. Match Booyah + Kills)"
+                        className="flex-1 min-w-[140px] min-h-[36px] px-2.5 py-1 rounded-md border border-white/10 bg-[#121216] text-xs text-white"
                       />
                       <button
                         type="button"
@@ -1950,112 +2103,202 @@ export function AdminDashboard({
         </div>
       )}
 
-      {/* 4. WITHDRAWALS MANAGEMENT (100 Coins = ₹10) */}
+      {/* 4. WALLET: WITHDRAWALS & AUTO-VERIFIED QR COIN DEPOSITS (1 Coin = ₹1 · Min ₹50) */}
       {section === 'withdrawals' && (
-        <div className="rounded-xl border border-white/10 bg-[#121216] p-5 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h2 className="font-display text-xl font-bold text-white flex items-center gap-2">
-                <Wallet className="w-5 h-5 text-amber-400" />
-                Player Withdrawal Requests (100 Coins = ₹10)
-              </h2>
-              <p className="text-xs text-zinc-400 mt-0.5">
-                Approve paid payouts or reject to automatically refund Spider Coins to the player wallet.
+        <div className="space-y-6">
+          <div className="rounded-xl border border-white/10 bg-[#121216] p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-xl font-bold text-white flex items-center gap-2">
+                  <Wallet className="w-5 h-5 text-amber-400" />
+                  Winning Prize Withdrawals (1 Coin = ₹1 · Min {MIN_WITHDRAWAL_COINS} Winning Coins / ₹{MIN_WITHDRAWAL_RUPEES})
+                </h2>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Only Winning Prize Coins can be redeemed. Approve paid payouts or reject to refund winning prize coins back to the player.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(['all', 'pending', 'approved', 'rejected'] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setWithdrawalFilter(st)}
+                    className={`min-h-[36px] px-3 py-1 rounded-lg text-xs font-semibold capitalize ${
+                      withdrawalFilter === st
+                        ? 'bg-[#E11D48] text-white'
+                        : 'bg-[#09090B] text-zinc-400 border border-white/10 hover:text-white'
+                    }`}
+                  >
+                    {st}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {visibleWithdrawals.length === 0 ? (
+              <p className="text-xs text-zinc-400 py-6 text-center">
+                No withdrawal requests match the selected filter.
               </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {(['all', 'pending', 'approved', 'rejected'] as const).map((st) => (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => setWithdrawalFilter(st)}
-                  className={`min-h-[36px] px-3 py-1 rounded-lg text-xs font-semibold capitalize ${
-                    withdrawalFilter === st
-                      ? 'bg-[#E11D48] text-white'
-                      : 'bg-[#09090B] text-zinc-400 border border-white/10 hover:text-white'
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
-            </div>
+            ) : (
+              <div className="divide-y divide-white/10">
+                {visibleWithdrawals.map((wd) => (
+                  <div key={wd.id} className="py-4 space-y-3 text-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-bold text-white">
+                          {wd.username} · {formatRupees(wd.rupees)} ({wd.coins.toLocaleString()} Coins)
+                        </p>
+                        <p className="text-zinc-400 font-mono-tabular">
+                          FF UID: {wd.freeFireUid} · {wd.method.toUpperCase()}: {wd.destination} ·{' '}
+                          {new Date(wd.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <span
+                        className={`font-semibold capitalize shrink-0 ${
+                          wd.status === 'approved'
+                            ? 'text-emerald-400'
+                            : wd.status === 'rejected'
+                              ? 'text-[#F43F5E]'
+                              : 'text-amber-400'
+                        }`}
+                      >
+                        {wd.status}
+                      </span>
+                    </div>
+
+                    {wd.status === 'pending' ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          aria-label={`Admin note for ${wd.username}`}
+                          value={withdrawalNotes[wd.id] ?? ''}
+                          onChange={(e) =>
+                            setWithdrawalNotes((prev) => ({ ...prev, [wd.id]: e.target.value }))
+                          }
+                          placeholder="Optional UTR / Payout Reference or Rejection Reason"
+                          className="flex-1 min-w-[220px] min-h-[38px] px-3 py-1.5 rounded-lg border border-white/10 bg-[#09090B] text-xs text-white"
+                        />
+                        <button
+                          type="button"
+                          disabled={processingWdId === wd.id}
+                          onClick={() => void handleProcessWithdrawal(wd, 'approved')}
+                          className="min-h-[38px] px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white"
+                        >
+                          Approve &amp; Mark Paid
+                        </button>
+                        <button
+                          type="button"
+                          disabled={processingWdId === wd.id}
+                          onClick={() => void handleProcessWithdrawal(wd, 'rejected')}
+                          className="min-h-[38px] px-3.5 py-1.5 rounded-lg border border-[#E11D48]/50 text-[#F43F5E] hover:bg-[#E11D48]/10 text-xs font-semibold"
+                        >
+                          Reject &amp; Refund Coins
+                        </button>
+                      </div>
+                    ) : (
+                      wd.adminNote && (
+                        <p className="text-zinc-300 bg-[#09090B] rounded px-3 py-1.5 border border-white/5">
+                          Note: {wd.adminNote}
+                        </p>
+                      )
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {visibleWithdrawals.length === 0 ? (
-            <p className="text-xs text-zinc-400 py-6 text-center">
-              No withdrawal requests match the selected filter.
-            </p>
-          ) : (
-            <div className="divide-y divide-white/10">
-              {visibleWithdrawals.map((wd) => (
-                <div key={wd.id} className="py-4 space-y-3 text-xs">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-bold text-white">
-                        {wd.username} · {formatRupees(wd.rupees)} ({wd.coins.toLocaleString()} Coins)
-                      </p>
-                      <p className="text-zinc-400 font-mono-tabular">
-                        FF UID: {wd.freeFireUid} · {wd.method.toUpperCase()}: {wd.destination} ·{' '}
-                        {new Date(wd.createdAt).toLocaleString()}
-                      </p>
-                    </div>
-                    <span
-                      className={`font-semibold capitalize shrink-0 ${
-                        wd.status === 'approved'
-                          ? 'text-emerald-400'
-                          : wd.status === 'rejected'
-                            ? 'text-[#F43F5E]'
-                            : 'text-amber-400'
-                      }`}
-                    >
-                      {wd.status}
-                    </span>
-                  </div>
-
-                  {wd.status === 'pending' ? (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <input
-                        type="text"
-                        aria-label={`Admin note for ${wd.username}`}
-                        value={withdrawalNotes[wd.id] ?? ''}
-                        onChange={(e) =>
-                          setWithdrawalNotes((prev) => ({ ...prev, [wd.id]: e.target.value }))
-                        }
-                        placeholder="Optional UTR / Payout Reference or Rejection Reason"
-                        className="flex-1 min-w-[220px] min-h-[38px] px-3 py-1.5 rounded-lg border border-white/10 bg-[#09090B] text-xs text-white"
-                      />
-                      <button
-                        type="button"
-                        disabled={processingWdId === wd.id}
-                        onClick={() => void handleProcessWithdrawal(wd, 'approved')}
-                        className="min-h-[38px] px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white"
-                      >
-                        Approve &amp; Mark Paid
-                      </button>
-                      <button
-                        type="button"
-                        disabled={processingWdId === wd.id}
-                        onClick={() => void handleProcessWithdrawal(wd, 'rejected')}
-                        className="min-h-[38px] px-3.5 py-1.5 rounded-lg border border-[#E11D48]/50 text-[#F43F5E] hover:bg-[#E11D48]/10 text-xs font-semibold"
-                      >
-                        Reject &amp; Refund Coins
-                      </button>
-                    </div>
-                  ) : (
-                    wd.adminNote && (
-                      <p className="text-zinc-300 bg-[#09090B] rounded px-3 py-1.5 border border-white/5">
-                        Note: {wd.adminNote}
-                      </p>
-                    )
-                  )}
-                </div>
-              ))}
+          {/* QR Add Coin Deposits Audit & Reversal */}
+          <div className="rounded-xl border border-white/10 bg-[#121216] p-5 space-y-4">
+            <div>
+              <h2 className="font-display text-xl font-bold text-white flex items-center gap-2">
+                <QrCode className="w-5 h-5 text-emerald-400" />
+                QR Add Coin Deposits ({coinDeposits.length})
+              </h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Payments submitted through Add Coins are inside-verified using unique 12-digit UTRs and auto-credited (1 Coin = ₹1). Rejecting a fraudulent UTR automatically deducts those coins.
+              </p>
             </div>
-          )}
+
+            {coinDeposits.length === 0 ? (
+              <p className="text-xs text-zinc-400 py-6 text-center">
+                No QR coin deposits recorded yet.
+              </p>
+            ) : (
+              <div className="divide-y divide-white/10">
+                {coinDeposits.map((dep) => (
+                  <div key={dep.id} className="py-4 space-y-3 text-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-bold text-white">
+                          {dep.username} · +{dep.coins.toLocaleString()} Coins ({formatRupees(dep.rupees)})
+                        </p>
+                        <p className="text-zinc-400 font-mono-tabular">
+                          UTR: <strong className="text-zinc-200">{dep.utr}</strong> · FF UID: {dep.freeFireUid}
+                          {dep.payerUpi ? ` · Payer UPI: ${dep.payerUpi}` : ''} ·{' '}
+                          {new Date(dep.createdAt).toLocaleString()}
+                        </p>
+                        <p className="text-[11px] text-zinc-400">{dep.verificationNote}</p>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded border text-[11px] font-semibold shrink-0 ${
+                          dep.status === 'verified'
+                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            : 'bg-[#E11D48]/15 text-[#FB7185] border-[#E11D48]/30'
+                        }`}
+                      >
+                        {dep.status === 'verified' ? 'Auto-Verified' : 'Reversed'}
+                      </span>
+                    </div>
+
+                    {dep.screenshotUrl && (
+                      <div className="rounded-lg border border-white/10 bg-[#09090B] p-2.5 inline-block">
+                        <p className="text-[11px] text-zinc-400 mb-1.5">Attached Payment Receipt</p>
+                        <img
+                          src={dep.screenshotUrl}
+                          alt={`Receipt for UTR ${dep.utr}`}
+                          className="max-h-48 rounded border border-white/10 object-contain"
+                        />
+                      </div>
+                    )}
+
+                    {dep.status === 'verified' ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          aria-label={`Rejection reason for UTR ${dep.utr}`}
+                          value={depositNotes[dep.id] ?? ''}
+                          onChange={(e) =>
+                            setDepositNotes((prev) => ({ ...prev, [dep.id]: e.target.value }))
+                          }
+                          placeholder="Reason if UTR not found on bank statement"
+                          className="flex-1 min-w-[220px] min-h-[38px] px-3 py-1.5 rounded-lg border border-white/10 bg-[#09090B] text-xs text-white"
+                        />
+                        <button
+                          type="button"
+                          disabled={processingDepositId === dep.id}
+                          onClick={() => void handleRejectCoinDeposit(dep)}
+                          className="min-h-[38px] px-3.5 py-1.5 rounded-lg border border-[#E11D48]/50 text-[#F43F5E] hover:bg-[#E11D48]/10 text-xs font-semibold"
+                        >
+                          {processingDepositId === dep.id ? 'Reversing...' : 'Reject & Deduct Coins'}
+                        </button>
+                      </div>
+                    ) : (
+                      dep.adminNote && (
+                        <p className="text-[#FB7185] bg-[#09090B] rounded px-3 py-1.5 border border-white/5">
+                          Reversed Reason: {dep.adminNote}
+                        </p>
+                      )
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* 5. APP, ANNOUNCEMENTS, NOTIFICATIONS & ADMOB SETTINGS */}
+      {/* 5. APP, ANNOUNCEMENTS, NOTIFICATIONS & PAYMENT QR SETTINGS */}
       {section === 'app' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <form
@@ -2146,6 +2389,7 @@ export function AdminDashboard({
                 <option value="cancellation">Cancellation</option>
                 <option value="result">Published Results</option>
                 <option value="withdrawal">Withdrawal Update</option>
+                <option value="deposit">Coin Deposit Update</option>
               </select>
             </div>
             <input
@@ -2172,432 +2416,384 @@ export function AdminDashboard({
             </button>
           </form>
 
+          {/* Payment QR Code & Wallet Settings (Choose File) */}
           <form
             onSubmit={async (e) => {
               e.preventDefault();
-              setAdMobError(null);
-              const parsedCooldown = Math.floor(Number(interstitialCooldownSeconds));
-              const err =
-                validateAdMobAppId(adMobAppId) ||
-                validateAdMobUnitId(bannerUnit, 'Banner Ad Unit ID') ||
-                validateAdMobUnitId(interstitialUnit, 'Interstitial Ad Unit ID') ||
-                validateAdMobUnitId(rewardedUnit, 'Rewarded Ad Unit ID') ||
-                validateAdSenseClientId(adSenseClientId) ||
-                validateInterstitialCooldownSeconds(parsedCooldown);
-              if (err) {
-                setAdMobError(err);
+              setQrSettingsError(null);
+              const trimmedUpi = paymentUpiId.trim();
+              if (trimmedUpi && !/^[a-zA-Z0-9._-]{2,64}@[a-zA-Z]{2,32}$/.test(trimmedUpi)) {
+                setQrSettingsError('Enter a valid UPI ID (e.g. yourname@okaxis), or leave blank.');
                 return;
               }
-              await adminUpdateSettings({
-                id: 'default',
-                adMobMode,
-                adMobAppId: adMobAppId.trim(),
-                adSenseClientId: adSenseClientId.trim(),
-                bannerAdUnitId: bannerUnit.trim(),
-                interstitialAdUnitId: interstitialUnit.trim(),
-                rewardedAdUnitId: rewardedUnit.trim(),
-                bannerAdsEnabled,
-                interstitialAdsEnabled,
-                rewardedAdsEnabled,
-                interstitialCooldownSeconds: parsedCooldown,
-                bannerPlacement,
-                featuredAnnouncement: featuredAnn.trim(),
-                maintenanceMode: false,
-              });
-              onToast('AdMob & platform settings updated in Firestore.');
+              setSavingQrSettings(true);
+              try {
+                await adminUpdateSettings({
+                  id: 'default',
+                  ...(paymentQrDataUrl.trim() ? { paymentQrDataUrl: paymentQrDataUrl.trim() } : {}),
+                  ...(trimmedUpi ? { paymentUpiId: trimmedUpi } : {}),
+                  ...(paymentReceiverName.trim()
+                    ? { paymentReceiverName: paymentReceiverName.trim() }
+                    : {}),
+                  ...(adminSettings.telegramSupportUrl?.trim()
+                    ? { telegramSupportUrl: adminSettings.telegramSupportUrl.trim() }
+                    : {}),
+                  ...(adminSettings.telegramSupportLabel?.trim()
+                    ? { telegramSupportLabel: adminSettings.telegramSupportLabel.trim() }
+                    : {}),
+                  featuredAnnouncement: featuredAnn.trim(),
+                  maintenanceMode: false,
+                });
+                onToast('Payment QR & wallet settings saved to Firestore.');
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : 'Unable to save QR settings.';
+                setQrSettingsError(msg);
+                onToast(msg);
+              } finally {
+                setSavingQrSettings(false);
+              }
             }}
-            className="lg:col-span-2 rounded-xl border border-white/10 bg-[#121216] p-5 space-y-4"
+            className="lg:col-span-2 rounded-xl border border-white/10 bg-[#121216] p-5 space-y-5"
           >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="font-display text-xl font-bold text-white">
-                  Google AdMob Configuration &amp; Banner Controls
-                </h2>
-                <p className="text-xs text-zinc-400 mt-0.5">
-                  Runtime Bridge:{' '}
-                  <span className="text-zinc-200 font-medium">
-                    {getAdMobRuntimeLabel(detectAdMobRuntime())}
-                  </span>
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAdMobError(null);
-                    setAdMobMode('test');
-                    setAdMobAppId(ADMOB_OFFICIAL_TEST_IDS.appId);
-                    setBannerUnit(ADMOB_OFFICIAL_TEST_IDS.banner);
-                    setInterstitialUnit(ADMOB_OFFICIAL_TEST_IDS.interstitial);
-                    setRewardedUnit(ADMOB_OFFICIAL_TEST_IDS.rewarded);
-                    onToast('Filled official Google AdMob Test App ID & Unit IDs.');
-                  }}
-                  className="min-h-[38px] px-3.5 py-1.5 rounded-lg border border-white/15 bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-white"
-                >
-                  Fill Official Google Test IDs
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAdMobError(null);
-                    setAdMobMode('production');
-                    setAdMobAppId(ADMOB_PRODUCTION_CREDENTIALS.appId);
-                    setBannerUnit(ADMOB_PRODUCTION_CREDENTIALS.banner);
-                    setInterstitialUnit(ADMOB_PRODUCTION_CREDENTIALS.interstitial);
-                    setRewardedUnit(ADMOB_PRODUCTION_CREDENTIALS.rewarded);
-                    onToast('Filled Spider Esports Production AdMob IDs.');
-                  }}
-                  className="min-h-[38px] px-3.5 py-1.5 rounded-lg border border-[#E11D48]/50 bg-[#E11D48]/15 hover:bg-[#E11D48]/25 text-xs font-semibold text-white"
-                >
-                  Fill Production IDs ({ADMOB_PRODUCTION_CREDENTIALS.publisherId})
-                </button>
-              </div>
+            <div>
+              <h2 className="font-display text-xl font-bold text-white flex items-center gap-2">
+                <QrCode className="w-5 h-5 text-emerald-400" />
+                Payment QR Code &amp; Add Coin Settings
+              </h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Upload your PhonePe / GPay / Paytm / Bank UPI QR code file here. Players see this QR in Wallet &rarr; Add Coins (₹1 = 1 Coin) and verify payments with their 12-digit UTR.
+              </p>
             </div>
 
-            {adMobError && (
+            {qrSettingsError && (
               <div
                 role="alert"
                 className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200"
               >
-                {adMobError}
+                {qrSettingsError}
               </div>
             )}
 
-            {/* Separate Web/PWA & Native Android Ad Integration Status Monitors */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              {/* Web / PWA Browser Preview Monitor */}
-              <div className="rounded-lg border border-white/10 bg-[#09090B] p-3.5 space-y-2.5 text-xs tabular-nums">
-                <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
-                  <span className="font-semibold text-white">Web / PWA Preview Status</span>
-                  <span className="text-[11px] font-medium text-amber-300 capitalize">
-                    {adMobStatus.webPwa.status}
-                  </span>
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
+              {/* QR File Upload & Preview */}
+              <div className="md:col-span-5 rounded-xl border border-white/10 bg-[#09090B] p-4 space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-white">Your UPI Payment QR</span>
+                  {paymentQrDataUrl && (
+                    <span className="text-[11px] text-emerald-300 font-mono-tabular">
+                      ~{estimateDataUrlSizeKb(paymentQrDataUrl)} KB
+                    </span>
+                  )}
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <p className="text-[11px] text-zinc-400">Banner Slot</p>
-                    <p className="font-semibold text-zinc-100 capitalize mt-0.5">
-                      {adMobStatus.webPwa.banner}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] text-zinc-400">Interstitial</p>
-                    <p className="font-semibold text-zinc-300 mt-0.5">
-                      {adMobStatus.webPwa.interstitial}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] text-zinc-400">Rewarded</p>
-                    <p className="font-semibold text-zinc-300 mt-0.5">
-                      {adMobStatus.webPwa.rewarded}
-                    </p>
-                  </div>
-                </div>
-                <p className="text-[11px] text-zinc-400 leading-relaxed">
-                  {adMobStatus.webPwa.message}
-                </p>
-              </div>
 
-              {/* Native Android AdMob SDK Monitor */}
-              <div className="rounded-lg border border-white/10 bg-[#09090B] p-3.5 space-y-2.5 text-xs tabular-nums">
-                <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
-                  <span className="font-semibold text-white">Android Native SDK Status</span>
-                  <span className="text-[11px] font-medium text-zinc-300">
-                    {adMobStatus.android.isTestMode ? 'Test Mode' : 'Production'} ·{' '}
-                    <span className="capitalize text-white">{adMobStatus.android.sdkState}</span>
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div>
-                    <p className="text-[11px] text-zinc-400">UMP Consent</p>
-                    <p className="font-semibold text-white mt-0.5">
-                      {adMobStatus.android.consentStatus}{' '}
-                      {adMobStatus.android.canRequestAds ? '(OK)' : '(Pending)'}
-                    </p>
+                {paymentQrDataUrl ? (
+                  <div className="bg-white p-3 rounded-xl border border-white/20 flex items-center justify-center">
+                    <img
+                      src={paymentQrDataUrl}
+                      alt="Uploaded Payment QR preview"
+                      className="w-48 h-48 object-contain"
+                    />
                   </div>
-                  <div>
-                    <p className="text-[11px] text-zinc-400">Banner State</p>
-                    <p
-                      className={`font-semibold capitalize mt-0.5 ${
-                        adMobStatus.android.bannerState === 'loaded' ||
-                        adMobStatus.android.bannerState === 'displayed'
-                          ? 'text-emerald-300'
-                          : adMobStatus.android.bannerState === 'failed'
-                            ? 'text-rose-300'
-                            : 'text-zinc-200'
-                      }`}
+                ) : (
+                  <div className="h-48 rounded-xl border border-dashed border-white/15 bg-[#121216] flex flex-col items-center justify-center text-center p-4 text-xs text-zinc-400 gap-2">
+                    <QrCode className="w-8 h-8 text-zinc-500" />
+                    <span>No Payment QR uploaded yet</span>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <label
+                    htmlFor="adm-qr-file-input"
+                    className={`flex-1 min-h-[42px] px-3 py-2 rounded-lg border border-dashed border-emerald-500/60 bg-[#121216] hover:bg-[#18181D] text-xs font-semibold text-white flex items-center justify-center gap-2 cursor-pointer transition-colors ${
+                      uploadingQr ? 'opacity-60 pointer-events-none' : ''
+                    }`}
+                  >
+                    <Upload className="w-4 h-4 text-emerald-400" />
+                    {uploadingQr ? 'Processing QR...' : 'Choose QR File'}
+                  </label>
+                  <input
+                    id="adm-qr-file-input"
+                    type="file"
+                    accept={ALLOWED_IMAGE_INPUT_ACCEPT}
+                    disabled={uploadingQr}
+                    onChange={(e) => void handleQrFileUpload(e)}
+                    className="sr-only"
+                  />
+                  {paymentQrDataUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentQrDataUrl('')}
+                      className="min-h-[42px] px-3 py-2 rounded-lg border border-[#E11D48]/40 text-xs font-semibold text-[#F43F5E] hover:bg-[#E11D48]/10"
                     >
-                      {adMobStatus.android.bannerState}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] text-zinc-400">Interstitial</p>
-                    <p
-                      className={`font-semibold capitalize mt-0.5 ${
-                        adMobStatus.android.interstitialState === 'loaded' ||
-                        adMobStatus.android.interstitialState === 'displayed'
-                          ? 'text-emerald-300'
-                          : adMobStatus.android.interstitialState === 'failed'
-                            ? 'text-rose-300'
-                            : 'text-zinc-200'
-                      }`}
-                    >
-                      {adMobStatus.android.interstitialState}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] text-zinc-400">Rewarded</p>
-                    <p
-                      className={`font-semibold capitalize mt-0.5 ${
-                        adMobStatus.android.rewardedState === 'loaded' ||
-                        adMobStatus.android.rewardedState === 'displayed'
-                          ? 'text-emerald-300'
-                          : adMobStatus.android.rewardedState === 'failed'
-                            ? 'text-rose-300'
-                            : 'text-zinc-200'
-                      }`}
-                    >
-                      {adMobStatus.android.rewardedState}
-                    </p>
-                  </div>
+                      Remove QR
+                    </button>
+                  )}
                 </div>
-                <p className="text-[11px] text-zinc-400 leading-relaxed">
-                  Format states stay <span className="text-zinc-200 font-medium">idle</span> until an actual ad request succeeds (<span className="text-zinc-200 font-medium">loaded</span>); SDK init never marks ads ready.
-                </p>
               </div>
-            </div>
 
-            {/* SDK Initialization & Ad Loading Errors Panel */}
-            {(adMobStatus.android.sdkError ||
-              adMobStatus.android.bannerError ||
-              adMobStatus.android.interstitialError ||
-              adMobStatus.android.rewardedError) && (
-              <div
-                role="alert"
-                className="rounded-lg border border-rose-500/35 bg-rose-500/10 p-3.5 space-y-1.5 text-xs text-rose-200"
-              >
-                <p className="font-semibold text-rose-100">
-                  AdMob SDK &amp; Ad Loading Errors
-                </p>
-                {adMobStatus.android.sdkError && (
-                  <p>SDK Init / Consent: {adMobStatus.android.sdkError}</p>
-                )}
-                {adMobStatus.android.bannerError && (
-                  <p>Banner Load: {adMobStatus.android.bannerError}</p>
-                )}
-                {adMobStatus.android.interstitialError && (
-                  <p>Interstitial Load/Show: {adMobStatus.android.interstitialError}</p>
-                )}
-                {adMobStatus.android.rewardedError && (
-                  <p>Rewarded Load/Show: {adMobStatus.android.rewardedError}</p>
-                )}
-              </div>
-            )}
-
-            {/* Ad Format Feature Toggles */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-[#09090B] px-3.5 py-2.5 cursor-pointer">
+              {/* QR Receiver Name, Optional UPI ID & Headline */}
+              <div className="md:col-span-7 space-y-4">
                 <div>
-                  <span className="block text-xs font-semibold text-white">Banner Ads</span>
-                  <span className="block text-[11px] text-zinc-400">Adaptive non-overlapping footer</span>
+                  <label htmlFor="qr-receiver-name" className="block text-xs text-zinc-300 mb-1">
+                    Receiver / Display Name
+                  </label>
+                  <input
+                    id="qr-receiver-name"
+                    type="text"
+                    maxLength={80}
+                    value={paymentReceiverName}
+                    onChange={(e) => setPaymentReceiverName(e.target.value)}
+                    placeholder="e.g. SPIDER ESPORTS Official Pay"
+                    className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
+                  />
                 </div>
-                <input
-                  type="checkbox"
-                  checked={bannerAdsEnabled}
-                  onChange={(e) => setBannerAdsEnabled(e.target.checked)}
-                  className="h-4 w-4 accent-[#E11D48]"
-                />
-              </label>
 
-              <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-[#09090B] px-3.5 py-2.5 cursor-pointer">
                 <div>
-                  <span className="block text-xs font-semibold text-white">Interstitial Ads</span>
-                  <span className="block text-[11px] text-zinc-400">Natural breaks only</span>
+                  <label htmlFor="qr-upi-id" className="block text-xs text-zinc-300 mb-1">
+                    UPI ID (Optional, shown with Copy button)
+                  </label>
+                  <input
+                    id="qr-upi-id"
+                    type="text"
+                    maxLength={100}
+                    value={paymentUpiId}
+                    onChange={(e) => setPaymentUpiId(e.target.value)}
+                    placeholder="e.g. spideresports@okaxis"
+                    className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
+                  />
                 </div>
-                <input
-                  type="checkbox"
-                  checked={interstitialAdsEnabled}
-                  onChange={(e) => setInterstitialAdsEnabled(e.target.checked)}
-                  className="h-4 w-4 accent-[#E11D48]"
-                />
-              </label>
 
-              <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-[#09090B] px-3.5 py-2.5 cursor-pointer">
                 <div>
-                  <span className="block text-xs font-semibold text-white">Rewarded Ads</span>
-                  <span className="block text-[11px] text-zinc-400">Withdrawals &amp; cosmetic emblem</span>
+                  <label htmlFor="feat-banner" className="block text-xs text-zinc-300 mb-1">
+                    Promotional Banner Headline
+                  </label>
+                  <input
+                    id="feat-banner"
+                    type="text"
+                    maxLength={200}
+                    value={featuredAnn}
+                    onChange={(e) => setFeaturedAnn(e.target.value)}
+                    className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
+                  />
                 </div>
-                <input
-                  type="checkbox"
-                  checked={rewardedAdsEnabled}
-                  onChange={(e) => setRewardedAdsEnabled(e.target.checked)}
-                  className="h-4 w-4 accent-[#E11D48]"
-                />
-              </label>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="admob-mode" className="block text-xs text-zinc-300 mb-1">
-                  AdMob Environment
-                </label>
-                <select
-                  id="admob-mode"
-                  value={adMobMode}
-                  onChange={(e) => setAdMobMode(e.target.value as 'test' | 'production')}
-                  className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
-                >
-                  <option value="test">Test Mode (Enforces Official Google Test IDs)</option>
-                  <option value="production">Production Mode (Live AdMob Unit IDs)</option>
-                </select>
-              </div>
-              <div>
-                <label htmlFor="feat-banner" className="block text-xs text-zinc-300 mb-1">
-                  Promotional Banner Headline
-                </label>
-                <input
-                  id="feat-banner"
-                  type="text"
-                  value={featuredAnn}
-                  onChange={(e) => setFeaturedAnn(e.target.value)}
-                  className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
-                />
-              </div>
-              <div>
-                <label htmlFor="banner-placement" className="block text-xs text-zinc-300 mb-1">
-                  Banner Ad Placement Screens
-                </label>
-                <select
-                  id="banner-placement"
-                  value={bannerPlacement}
-                  onChange={(e) => setBannerPlacement(e.target.value as AdBannerPlacement)}
-                  className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
-                >
-                  <option value="all_screens">All Content Screens (Home, Matches, Results, Ranks, Profile)</option>
-                  <option value="home_and_matches">Home &amp; Match Listings Only</option>
-                  <option value="home_only">Home Screen Only</option>
-                </select>
-              </div>
-              <div>
-                <label htmlFor="interstitial-cooldown" className="block text-xs text-zinc-300 mb-1">
-                  Interstitial Cooldown ({MIN_INTERSTITIAL_COOLDOWN_SECONDS}–{MAX_INTERSTITIAL_COOLDOWN_SECONDS} seconds)
-                </label>
-                <input
-                  id="interstitial-cooldown"
-                  type="number"
-                  min={MIN_INTERSTITIAL_COOLDOWN_SECONDS}
-                  max={MAX_INTERSTITIAL_COOLDOWN_SECONDS}
-                  step={5}
-                  value={interstitialCooldownSeconds}
-                  onChange={(e) => setInterstitialCooldownSeconds(Number(e.target.value))}
-                  className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
-                />
-              </div>
-              <div>
-                <label htmlFor="admob-app-id" className="block text-xs text-zinc-300 mb-1">
-                  AdMob App ID (~)
-                </label>
-                <input
-                  id="admob-app-id"
-                  type="text"
-                  placeholder="ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY"
-                  value={adMobAppId}
-                  onChange={(e) => setAdMobAppId(e.target.value)}
-                  className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-xs font-mono-tabular text-white"
-                />
-              </div>
-              <div>
-                <label htmlFor="adsense-client-id" className="block text-xs text-zinc-300 mb-1">
-                  Web AdSense Publisher ID (Optional)
-                </label>
-                <input
-                  id="adsense-client-id"
-                  type="text"
-                  placeholder="ca-pub-XXXXXXXXXXXXXXXX"
-                  value={adSenseClientId}
-                  onChange={(e) => setAdSenseClientId(e.target.value)}
-                  className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-xs font-mono-tabular text-white"
-                />
-              </div>
-              <div>
-                <label htmlFor="unit-banner" className="block text-xs text-zinc-300 mb-1">
-                  Banner Ad Unit ID (/)
-                </label>
-                <input
-                  id="unit-banner"
-                  type="text"
-                  placeholder="ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY"
-                  value={bannerUnit}
-                  onChange={(e) => setBannerUnit(e.target.value)}
-                  className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-xs font-mono-tabular text-white"
-                />
-              </div>
-              <div>
-                <label htmlFor="unit-inter" className="block text-xs text-zinc-300 mb-1">
-                  Interstitial Ad Unit ID (/)
-                </label>
-                <input
-                  id="unit-inter"
-                  type="text"
-                  placeholder="ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY"
-                  value={interstitialUnit}
-                  onChange={(e) => setInterstitialUnit(e.target.value)}
-                  className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-xs font-mono-tabular text-white"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label htmlFor="unit-rew" className="block text-xs text-zinc-300 mb-1">
-                  Rewarded Ad Unit ID (/)
-                </label>
-                <input
-                  id="unit-rew"
-                  type="text"
-                  placeholder="ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY"
-                  value={rewardedUnit}
-                  onChange={(e) => setRewardedUnit(e.target.value)}
-                  className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-xs font-mono-tabular text-white"
-                />
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-white/10 bg-[#09090B] p-3.5 space-y-2">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs font-semibold text-white">
-                    Play Store app-ads.txt Verification Line
-                  </p>
-                  <p className="text-[11px] text-zinc-400">
-                    Hosted at <span className="font-mono-tabular text-zinc-300">/app-ads.txt</span>. Update{' '}
-                    <span className="font-mono-tabular text-zinc-300">public/app-ads.txt</span> with this line before publishing live ads:
-                  </p>
+                <div className="rounded-lg border border-white/10 bg-[#09090B] p-3 text-xs text-zinc-400">
+                  Wallet Economy: <strong className="text-white">1 Spider Coin = ₹1</strong> · Redemption:{' '}
+                  <strong className="text-white">Winning Prizes Only (Min {MIN_WITHDRAWAL_COINS} Coins / ₹{MIN_WITHDRAWAL_RUPEES})</strong> · Ad-Free Edition
                 </div>
+
                 <button
-                  type="button"
-                  onClick={() => {
-                    const line = buildAppAdsTxtLine(adMobAppId || bannerUnit);
-                    void navigator.clipboard?.writeText(line).then(() => {
-                      setCopiedAppAdsTxt(true);
-                      onToast('Copied app-ads.txt verification line.');
-                      window.setTimeout(() => setCopiedAppAdsTxt(false), 2500);
-                    });
-                  }}
-                  className="min-h-[34px] px-3 rounded-lg border border-white/15 bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-white shrink-0"
+                  type="submit"
+                  disabled={savingQrSettings}
+                  className="min-h-[44px] px-6 py-2 rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] disabled:opacity-50 text-xs font-semibold text-white"
                 >
-                  {copiedAppAdsTxt ? 'Copied' : 'Copy app-ads.txt'}
+                  {savingQrSettings ? 'Saving Settings...' : 'Save Payment QR & Wallet Settings'}
                 </button>
               </div>
-              <code className="block rounded bg-[#121216] border border-white/5 px-3 py-2 text-[11px] font-mono-tabular text-emerald-300 break-all">
-                {buildAppAdsTxtLine(adMobAppId || bannerUnit)}
-              </code>
             </div>
-
-            <button
-              type="submit"
-              className="min-h-[44px] px-6 py-2 rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] text-xs font-semibold text-white"
-            >
-              Save AdMob Configuration
-            </button>
           </form>
+
+          {/* Customer Support (Telegram) Connection */}
+          {(() => {
+            const connectedTelegram = getTelegramSupportInfo(adminSettings);
+            const livePreview = normalizeAndValidateTelegramSupport(telegramSupportUrlInput);
+
+            const handleSaveTelegram = async (e: React.FormEvent) => {
+              e.preventDefault();
+              setTelegramSupportError(null);
+              const validatedUrl = normalizeAndValidateTelegramSupport(telegramSupportUrlInput);
+              if (!validatedUrl.valid) {
+                setTelegramSupportError(validatedUrl.error);
+                return;
+              }
+              const validatedLabel = validateTelegramSupportLabel(telegramSupportLabelInput);
+              if (!validatedLabel.valid) {
+                setTelegramSupportError(validatedLabel.error);
+                return;
+              }
+              setSavingTelegramSupport(true);
+              try {
+                await adminUpdateSettings({
+                  id: 'default',
+                  ...(adminSettings.paymentQrDataUrl?.trim()
+                    ? { paymentQrDataUrl: adminSettings.paymentQrDataUrl.trim() }
+                    : {}),
+                  ...(adminSettings.paymentUpiId?.trim()
+                    ? { paymentUpiId: adminSettings.paymentUpiId.trim() }
+                    : {}),
+                  ...(adminSettings.paymentReceiverName?.trim()
+                    ? { paymentReceiverName: adminSettings.paymentReceiverName.trim() }
+                    : {}),
+                  telegramSupportUrl: validatedUrl.url,
+                  telegramSupportLabel: validatedLabel.label || '24/7 Telegram Support',
+                  featuredAnnouncement: adminSettings.featuredAnnouncement?.trim() || '',
+                  maintenanceMode: false,
+                });
+                setTelegramSupportUrlInput(validatedUrl.url);
+                onToast(
+                  validatedUrl.url
+                    ? `Telegram support connected (${validatedUrl.displayHandle}).`
+                    : 'Telegram support disconnected.'
+                );
+              } catch (err) {
+                const msg =
+                  err instanceof Error ? err.message : 'Unable to save Telegram support link.';
+                setTelegramSupportError(msg);
+                onToast(msg);
+              } finally {
+                setSavingTelegramSupport(false);
+              }
+            };
+
+            const handleDisconnectTelegram = async () => {
+              setTelegramSupportError(null);
+              setSavingTelegramSupport(true);
+              try {
+                await adminUpdateSettings({
+                  id: 'default',
+                  ...(adminSettings.paymentQrDataUrl?.trim()
+                    ? { paymentQrDataUrl: adminSettings.paymentQrDataUrl.trim() }
+                    : {}),
+                  ...(adminSettings.paymentUpiId?.trim()
+                    ? { paymentUpiId: adminSettings.paymentUpiId.trim() }
+                    : {}),
+                  ...(adminSettings.paymentReceiverName?.trim()
+                    ? { paymentReceiverName: adminSettings.paymentReceiverName.trim() }
+                    : {}),
+                  telegramSupportUrl: '',
+                  telegramSupportLabel: '',
+                  featuredAnnouncement: adminSettings.featuredAnnouncement?.trim() || '',
+                  maintenanceMode: false,
+                });
+                setTelegramSupportUrlInput('');
+                setTelegramSupportLabelInput('');
+                onToast('Telegram customer support disconnected.');
+              } catch (err) {
+                const msg =
+                  err instanceof Error ? err.message : 'Unable to disconnect Telegram support.';
+                setTelegramSupportError(msg);
+                onToast(msg);
+              } finally {
+                setSavingTelegramSupport(false);
+              }
+            };
+
+            return (
+              <form
+                onSubmit={handleSaveTelegram}
+                className="lg:col-span-2 rounded-xl border border-white/10 bg-[#121216] p-5 space-y-4"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h2 className="font-display text-xl font-bold text-white flex items-center gap-2">
+                      <MessageCircle className="w-5 h-5 text-sky-400" />
+                      Connect Customer Support (Telegram)
+                    </h2>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      Link your Telegram username, support channel, or group invite so players can click Customer Support and report issues directly to you on Telegram.
+                    </p>
+                  </div>
+                  <span
+                    className={`text-xs font-semibold shrink-0 ${
+                      connectedTelegram.configured ? 'text-emerald-400' : 'text-zinc-400'
+                    }`}
+                  >
+                    {connectedTelegram.configured
+                      ? `Connected · ${connectedTelegram.displayHandle}`
+                      : 'Not Connected'}
+                  </span>
+                </div>
+
+                {telegramSupportError && (
+                  <div
+                    role="alert"
+                    className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200"
+                  >
+                    {telegramSupportError}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="adm-tg-url" className="block text-xs text-zinc-300 mb-1">
+                      Telegram @Username or t.me Link
+                    </label>
+                    <input
+                      id="adm-tg-url"
+                      type="text"
+                      maxLength={TELEGRAM_SUPPORT_MAX_URL_LENGTH}
+                      value={telegramSupportUrlInput}
+                      onChange={(e) => setTelegramSupportUrlInput(e.target.value)}
+                      placeholder="e.g. @spider_support or https://t.me/spider_support"
+                      className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
+                    />
+                    {telegramSupportUrlInput.trim() && (
+                      <p
+                        className={`text-[11px] mt-1 ${
+                          livePreview.valid ? 'text-emerald-300' : 'text-rose-300'
+                        }`}
+                      >
+                        {livePreview.valid
+                          ? `Resolves to: ${livePreview.url}`
+                          : livePreview.error}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label htmlFor="adm-tg-label" className="block text-xs text-zinc-300 mb-1">
+                      Support Banner Text (Optional)
+                    </label>
+                    <input
+                      id="adm-tg-label"
+                      type="text"
+                      maxLength={TELEGRAM_SUPPORT_MAX_LABEL_LENGTH}
+                      value={telegramSupportLabelInput}
+                      onChange={(e) => setTelegramSupportLabelInput(e.target.value)}
+                      placeholder="24/7 Telegram Support"
+                      className="w-full min-h-[42px] px-3 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
+                    />
+                    <p className="text-[11px] text-zinc-500 mt-1">
+                      Shown on the Home 24/7 floating support card and Profile support link.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="submit"
+                    disabled={savingTelegramSupport}
+                    className="min-h-[44px] px-6 py-2 rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] disabled:opacity-50 text-xs font-semibold text-white inline-flex items-center gap-2"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    {savingTelegramSupport ? 'Saving...' : 'Save & Connect Telegram'}
+                  </button>
+
+                  {connectedTelegram.configured && (
+                    <>
+                      <a
+                        href={connectedTelegram.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="min-h-[44px] px-4 py-2 rounded-lg border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 text-xs font-semibold text-sky-300 inline-flex items-center gap-1.5"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Test Telegram Link
+                      </a>
+                      <button
+                        type="button"
+                        disabled={savingTelegramSupport}
+                        onClick={() => void handleDisconnectTelegram()}
+                        className="min-h-[44px] px-4 py-2 rounded-lg border border-white/15 hover:bg-white/5 text-xs font-semibold text-zinc-300"
+                      >
+                        Disconnect
+                      </button>
+                    </>
+                  )}
+                </div>
+              </form>
+            );
+          })()}
 
           <form
             onSubmit={async (e) => {

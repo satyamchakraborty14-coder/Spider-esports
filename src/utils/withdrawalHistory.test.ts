@@ -15,8 +15,8 @@ const SAMPLE_WITHDRAWALS: WithdrawalRequest[] = [
     userId: 'u1',
     username: 'KuroSpider',
     freeFireUid: '1234567890',
-    coins: 1500,
-    rupees: 15,
+    coins: 150,
+    rupees: 150,
     method: 'upi',
     destination: 'kuro@okaxis',
     status: 'pending',
@@ -28,8 +28,8 @@ const SAMPLE_WITHDRAWALS: WithdrawalRequest[] = [
     userId: 'u1',
     username: 'KuroSpider',
     freeFireUid: '1234567890',
-    coins: 2000,
-    rupees: 20,
+    coins: 200,
+    rupees: 200,
     method: 'bank',
     destination: '123456789012 · SBIN0001234',
     status: 'approved',
@@ -42,8 +42,8 @@ const SAMPLE_WITHDRAWALS: WithdrawalRequest[] = [
     userId: 'u1',
     username: 'KuroSpider',
     freeFireUid: '1234567890',
-    coins: 1000,
-    rupees: 10,
+    coins: 100,
+    rupees: 100,
     method: 'upi',
     destination: 'wrong@upi',
     status: 'rejected',
@@ -69,11 +69,11 @@ test('summarizeWithdrawals computes totals across all redemption statuses', () =
   assert.equal(summary.pendingCount, 1);
   assert.equal(summary.processedCount, 1);
   assert.equal(summary.rejectedCount, 1);
-  assert.equal(summary.pendingCoins, 1500);
-  assert.equal(summary.pendingRupees, 15);
-  assert.equal(summary.processedCoins, 2000);
-  assert.equal(summary.processedRupees, 20);
-  assert.equal(summary.rejectedCoins, 1000);
+  assert.equal(summary.pendingCoins, 150);
+  assert.equal(summary.pendingRupees, 150);
+  assert.equal(summary.processedCoins, 200);
+  assert.equal(summary.processedRupees, 200);
+  assert.equal(summary.rejectedCoins, 100);
 });
 
 test('filterAndSortWithdrawals filters by status bucket and sorts newest first', () => {

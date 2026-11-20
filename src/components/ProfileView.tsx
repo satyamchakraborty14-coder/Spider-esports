@@ -1,22 +1,27 @@
 import { useState } from 'react';
 import {
+  ArrowDownCircle,
   Award,
   Bell,
+  Check,
   CheckCircle2,
   Coins,
+  Copy,
   Crown,
+  ExternalLink,
   FileText,
   History,
   IndianRupee,
   KeyRound,
   LogOut,
+  MessageCircle,
   Palette,
-  Play,
+  QrCode,
   RefreshCw,
   ShieldAlert,
-  ShieldCheck,
   Trash2,
   Trophy,
+  Upload,
   UserCheck,
   Wallet,
 } from 'lucide-react';
@@ -27,17 +32,13 @@ import {
   logoutUser,
   requestCoinWithdrawal,
   setOrUpdateAppPassword,
-  unlockRewardedAdCosmetic,
   updatePlayerIdentity,
+  verifyAndAddCoinsFromQrPayment,
 } from '../lib/firestoreService';
-import {
-  showRewardedAdForCosmetic,
-  showRewardedAdForWithdrawal,
-} from '../lib/admobBridge';
-import { shouldProceedWithWithdrawalAfterRewardedAd } from '../utils/admobHelpers';
 import { BRAND_ASSETS, resolveBundledAssetUrl } from '../lib/seedData';
 import type {
   AdminSettings,
+  CoinDeposit,
   LeaderboardEntry,
   Registration,
   Tournament,
@@ -49,15 +50,27 @@ import type {
 import {
   ACHIEVEMENTS_CATALOG,
   calculateRupeesFromCoins,
-  COINS_PER_10_INR,
+  COINS_PER_RUPEE,
   COSMETIC_CATALOG,
   formatRupees,
+  getNonRedeemableCoins,
   getPlayerLeaderboardRank,
-  INR_PER_100_COINS,
+  getRedeemableWinningCoins,
   isCosmeticUnlocked,
   MIN_WITHDRAWAL_COINS,
+  MIN_WITHDRAWAL_RUPEES,
+  RUPEES_PER_COIN,
   validateWithdrawalRequest,
 } from '../utils/coinSystem';
+import {
+  ADD_COIN_PRESETS,
+  MAX_ADD_COIN_RUPEES,
+  MIN_ADD_COIN_RUPEES,
+} from '../utils/coinDepositVerification';
+import {
+  ALLOWED_IMAGE_INPUT_ACCEPT,
+  compressImageFileToDataUrl,
+} from '../utils/imageUpload';
 import {
   isStrictSoleAdminEmail,
   validateAdminPassword,
@@ -70,9 +83,7 @@ import {
   summarizeWithdrawals,
   type WithdrawalFilterStatus,
 } from '../utils/withdrawalHistory';
-import { getAdConsentSummary } from '../utils/adConsent';
-import { AdMobBannerSlot } from './AdMobUnits';
-import { ConsentManagementModal } from './ConsentManagementModal';
+import { getTelegramSupportInfo } from '../utils/supportConfig';
 import { WithdrawalHistoryModal } from './WithdrawalHistoryModal';
 import { sendEmailVerification } from 'firebase/auth';
 
@@ -84,12 +95,11 @@ interface ProfileViewProps {
   signInProvider?: string | null;
   registrations: Registration[];
   withdrawals: WithdrawalRequest[];
+  deposits?: CoinDeposit[];
   tournaments: Tournament[];
   results: TournamentResult[];
   leaderboard: LeaderboardEntry[];
   adminSettings: AdminSettings;
-  consentAccepted?: boolean;
-  onUpdateConsent?: (accepted: boolean) => void;
   onOpenAuth: () => void;
   onNavigateResults: () => void;
   onSelectTournament?: (t: Tournament) => void;
@@ -105,12 +115,11 @@ export function ProfileView({
   signInProvider,
   registrations,
   withdrawals,
+  deposits = [],
   tournaments,
   results,
   leaderboard,
   adminSettings,
-  consentAccepted = false,
-  onUpdateConsent,
   onOpenAuth,
   onNavigateResults,
   onSelectTournament,
@@ -129,9 +138,19 @@ export function ProfileView({
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [savingPassword, setSavingPassword] = useState(false);
 
-  // Rewarded Ad Cosmetic Unlock State (strictly non-cash, 0 Spider Coins)
-  const [watchingRewardAd, setWatchingRewardAd] = useState(false);
-  const [rewardAdError, setRewardAdError] = useState<string | null>(null);
+  // Wallet Tab ('withdraw' | 'add')
+  const [walletTab, setWalletTab] = useState<'withdraw' | 'add'>('withdraw');
+
+  // Add Coins via QR State
+  const [depositRupees, setDepositRupees] = useState<number>(100);
+  const [depositUtr, setDepositUtr] = useState('');
+  const [depositPayerUpi, setDepositPayerUpi] = useState('');
+  const [depositScreenshotUrl, setDepositScreenshotUrl] = useState('');
+  const [uploadingScreenshot, setUploadingScreenshot] = useState(false);
+  const [depositError, setDepositError] = useState<string | null>(null);
+  const [depositSuccess, setDepositSuccess] = useState<string | null>(null);
+  const [submittingDeposit, setSubmittingDeposit] = useState(false);
+  const [copiedUpi, setCopiedUpi] = useState(false);
 
   // Withdrawal Form & History Modal State
   const [withdrawCoins, setWithdrawCoins] = useState<number>(MIN_WITHDRAWAL_COINS);
@@ -141,7 +160,6 @@ export function ProfileView({
   const [submittingWithdraw, setSubmittingWithdraw] = useState(false);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<WithdrawalFilterStatus>('all');
-  const [consentModalOpen, setConsentModalOpen] = useState(false);
 
   const openHistoryModal = (filter: WithdrawalFilterStatus = 'all') => {
     setHistoryFilter(filter);
@@ -166,8 +184,10 @@ export function ProfileView({
   });
   const rank = profile ? getPlayerLeaderboardRank(leaderboard, profile.uid, 'global') : null;
   const userCoins = profile?.coins ?? 0;
-  const walletRupees = calculateRupeesFromCoins(userCoins);
-  const thresholdPercent = Math.min(100, Math.round((userCoins / MIN_WITHDRAWAL_COINS) * 100));
+  const winningCoins = getRedeemableWinningCoins(profile);
+  const addedNonRedeemableCoins = getNonRedeemableCoins(profile);
+  const winningRupees = calculateRupeesFromCoins(winningCoins);
+  const thresholdPercent = Math.min(100, Math.round((winningCoins / MIN_WITHDRAWAL_COINS) * 100));
   const previewPayout = calculateRupeesFromCoins(Number.isFinite(withdrawCoins) ? withdrawCoins : 0);
 
   const themeAccentClass =
@@ -255,41 +275,72 @@ export function ProfileView({
     }
   };
 
-  const handleWatchRewardedAd = async (cosmeticId: string) => {
-    if (!profile) return;
-    setRewardAdError(null);
-    if (!isEmailVerified) {
-      const msg = 'Verify your email address first before unlocking cosmetics.';
-      setRewardAdError(msg);
-      onToast(msg);
-      return;
-    }
-    if (profile.unlockedCosmetics?.includes(cosmeticId)) {
-      onToast('Arena Supporter emblem is already unlocked on your profile.');
-      return;
-    }
-    setWatchingRewardAd(true);
+  const hasPaymentQrConfigured = Boolean(adminSettings.paymentQrDataUrl?.trim());
+
+  const handleDepositScreenshotUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setDepositError(null);
+    setUploadingScreenshot(true);
     try {
-      const res = await showRewardedAdForCosmetic(adminSettings, consentAccepted);
-      if (res.outcome === 'rewarded') {
-        const unlockRes = await unlockRewardedAdCosmetic({ profile, cosmeticId });
-        onToast(
-          unlockRes.alreadyUnlocked
-            ? 'Arena Supporter emblem was already unlocked.'
-            : 'Ad completed! Arena Supporter cosmetic emblem unlocked & equipped (0 Coins).'
-        );
-      } else {
-        const msg =
-          res.error || 'Rewarded ad did not complete. Cosmetic remains locked (0 rewards granted).';
-        setRewardAdError(msg);
-        onToast(msg);
-      }
+      const result = await compressImageFileToDataUrl(file);
+      setDepositScreenshotUrl(result.dataUrl);
+      onToast(`Payment receipt attached (~${result.approxKb} KB).`);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unable to unlock cosmetic via rewarded ad.';
-      setRewardAdError(msg);
+      const msg = err instanceof Error ? err.message : 'Unable to attach payment screenshot.';
+      setDepositError(msg);
       onToast(msg);
     } finally {
-      setWatchingRewardAd(false);
+      setUploadingScreenshot(false);
+    }
+  };
+
+  const handleCopyAdminUpi = () => {
+    const upi = adminSettings.paymentUpiId?.trim();
+    if (!upi) return;
+    void navigator.clipboard?.writeText(upi).then(() => {
+      setCopiedUpi(true);
+      onToast(`Copied UPI ID: ${upi}`);
+      window.setTimeout(() => setCopiedUpi(false), 2000);
+    });
+  };
+
+  const handleSubmitDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile) return;
+    setDepositError(null);
+    setDepositSuccess(null);
+
+    if (!isEmailVerified) {
+      setDepositError('Please verify your email address before adding Spider Coins.');
+      return;
+    }
+
+    setSubmittingDeposit(true);
+    try {
+      const res = await verifyAndAddCoinsFromQrPayment({
+        profile,
+        amountRupees: Math.floor(Number(depositRupees)),
+        utr: depositUtr,
+        payerUpi: depositPayerUpi,
+        screenshotUrl: depositScreenshotUrl,
+        hasPaymentQrConfigured,
+      });
+      setDepositUtr('');
+      setDepositPayerUpi('');
+      setDepositScreenshotUrl('');
+      setDepositRupees(100);
+      const msg = `Verified UTR ${res.utr}! +${res.coinsAdded.toLocaleString()} Spider Coins added to your wallet (Balance: ${res.nextBalance.toLocaleString()}).`;
+      setDepositSuccess(msg);
+      onToast(msg);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to verify payment & add coins.';
+      setDepositError(msg);
+      onToast(msg);
+    } finally {
+      setSubmittingDeposit(false);
     }
   };
 
@@ -306,6 +357,7 @@ export function ProfileView({
     const validation = validateWithdrawalRequest({
       amountCoins: Math.floor(Number(withdrawCoins)),
       availableCoins: profile.coins,
+      availableWinningCoins: winningCoins,
       method: withdrawMethod,
       destination: withdrawDest,
     });
@@ -316,14 +368,6 @@ export function ProfileView({
 
     setSubmittingWithdraw(true);
     try {
-      const adRes = await showRewardedAdForWithdrawal(adminSettings, consentAccepted);
-      const gate = shouldProceedWithWithdrawalAfterRewardedAd(adRes.outcome);
-      if (!gate.proceed) {
-        setWithdrawError(gate.reason);
-        onToast(gate.reason);
-        return;
-      }
-
       await requestCoinWithdrawal({
         profile,
         amountCoins: validation.coins,
@@ -414,7 +458,7 @@ export function ProfileView({
             Create Your SPIDER ESPORTS Profile
           </h1>
           <p className="text-sm text-zinc-400 max-w-lg mx-auto">
-            Register with your unique username and Free Fire UID to join free community tournaments, earn Spider Coins from playing, kills, and wins (100 Coins = ₹10), and climb the global ladder.
+            Register with your unique username and Free Fire UID to join community tournaments, win Spider Coins (1 Coin = ₹1, only winning prizes redeemable, Min ₹50), and climb the global ladder.
           </p>
           <button
             type="button"
@@ -564,17 +608,22 @@ export function ProfileView({
               </form>
             )}
 
-            {/* Single Spider Coin Progress to Minimum Withdrawal */}
+            {/* Winning Prize Progress to Minimum Withdrawal */}
             <div className="space-y-2 pt-2 border-t border-white/10">
               <div className="flex items-center justify-between text-xs tabular-nums flex-wrap gap-2">
                 <span className="font-semibold text-white inline-flex items-center gap-1.5">
                   <Coins className="w-4 h-4 text-amber-400" />
-                  {userCoins.toLocaleString()} Spider Coins ({formatRupees(walletRupees)})
+                  Winning Prize: {winningCoins.toLocaleString()} Coins ({formatRupees(winningRupees)})
+                  {addedNonRedeemableCoins > 0 && (
+                    <span className="text-zinc-400 font-normal">
+                      · Added (Non-Redeemable): {addedNonRedeemableCoins.toLocaleString()}
+                    </span>
+                  )}
                 </span>
                 <span className="text-zinc-400">
-                  {userCoins >= MIN_WITHDRAWAL_COINS
-                    ? 'Withdrawal unlocked · 100 Coins = ₹10'
-                    : `${(MIN_WITHDRAWAL_COINS - userCoins).toLocaleString()} more coins to unlock ₹10 withdrawal`}
+                  {winningCoins >= MIN_WITHDRAWAL_COINS
+                    ? `Winning prize withdrawal unlocked · ${COINS_PER_RUPEE} Coin = ₹${RUPEES_PER_COIN}`
+                    : `${(MIN_WITHDRAWAL_COINS - winningCoins).toLocaleString()} more winning prize coins to unlock ₹${MIN_WITHDRAWAL_RUPEES} withdrawal`}
                 </span>
               </div>
               <div className="h-2 w-full rounded-full bg-zinc-800 overflow-hidden">
@@ -604,236 +653,529 @@ export function ProfileView({
                 <p className="text-xl font-bold text-white mt-0.5">{profile.totalKills}</p>
               </div>
               <div>
-                <p className="text-zinc-400">Spider Coins</p>
-                <p className="text-xl font-bold text-amber-400 mt-0.5">{userCoins.toLocaleString()}</p>
+                <p className="text-zinc-400">Winning / Total Coins</p>
+                <p className="text-xl font-bold text-amber-400 mt-0.5">
+                  {winningCoins.toLocaleString()}{' '}
+                  <span className="text-xs font-medium text-zinc-400">
+                    / {userCoins.toLocaleString()}
+                  </span>
+                </p>
               </div>
             </div>
           </section>
 
-          {/* Spider Coin Wallet & Withdrawal (100 Coins = ₹10) */}
+          {/* Spider Coin Wallet: Withdraw Coins (Min ₹50) & Add Coins via QR (1 Coin = ₹1) */}
           <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <form
-              onSubmit={handleSubmitWithdrawal}
-              className="lg:col-span-6 rounded-xl border border-white/10 bg-[#121216] p-6 space-y-4"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="font-display text-2xl font-bold text-white flex items-center gap-2">
-                    <Wallet className="w-5 h-5 text-amber-400" />
-                    Withdraw Spider Coins
-                  </h2>
-                  <p className="text-xs text-zinc-400 mt-1">
-                    Rate: <strong className="text-white">{COINS_PER_10_INR.toLocaleString()} Coins = ₹{INR_PER_100_COINS}</strong>. Coins are earned through match play, verified kills, and tournament wins credited by admin.
-                  </p>
-                </div>
-                <div className="text-right shrink-0 tabular-nums">
-                  <p className="text-[11px] text-zinc-400">Available</p>
-                  <p className="text-base font-bold text-amber-400">{userCoins.toLocaleString()}</p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {[100, 250, 500].map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    disabled={userCoins < preset}
-                    onClick={() => setWithdrawCoins(preset)}
-                    className="min-h-[36px] px-3 py-1 rounded-lg border border-white/10 bg-[#09090B] hover:border-amber-400/50 disabled:opacity-40 text-xs font-medium text-zinc-200 tabular-nums"
-                  >
-                    {preset.toLocaleString()} Coins ({formatRupees(calculateRupeesFromCoins(preset))})
-                  </button>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="wd-coins" className="block text-xs text-zinc-300 mb-1">
-                    Coins to Withdraw (Min 100)
-                  </label>
-                  <input
-                    id="wd-coins"
-                    type="number"
-                    min={MIN_WITHDRAWAL_COINS}
-                    max={Math.max(MIN_WITHDRAWAL_COINS, userCoins)}
-                    step={1}
-                    required
-                    value={withdrawCoins}
-                    onChange={(e) => setWithdrawCoins(Number(e.target.value))}
-                    className="w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="wd-method" className="block text-xs text-zinc-300 mb-1">
-                    Payout Method
-                  </label>
-                  <select
-                    id="wd-method"
-                    value={withdrawMethod}
-                    onChange={(e) => setWithdrawMethod(e.target.value as WithdrawalMethod)}
-                    className="w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
-                  >
-                    <option value="upi">UPI ID (PhonePe / GPay / Paytm)</option>
-                    <option value="bank">Bank Transfer (Account + IFSC)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="wd-dest" className="block text-xs text-zinc-300 mb-1">
-                  {withdrawMethod === 'upi' ? 'UPI ID' : 'Bank Account Number & IFSC Code'}
-                </label>
-                <input
-                  id="wd-dest"
-                  type="text"
-                  required
-                  value={withdrawDest}
-                  onChange={(e) => setWithdrawDest(e.target.value)}
-                  placeholder={
-                    withdrawMethod === 'upi' ? 'e.g. playername@okaxis' : 'e.g. 123456789012 · SBIN0001234'
-                  }
-                  className="w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
-                />
-              </div>
-
-              <div className="rounded-lg bg-[#09090B] border border-white/10 px-4 py-3 flex items-center justify-between text-xs tabular-nums">
-                <span className="text-zinc-400">Estimated Payout</span>
-                <span className="text-base font-bold text-emerald-400 inline-flex items-center gap-1">
-                  <IndianRupee className="w-4 h-4" />
-                  {formatRupees(previewPayout).replace('₹', '')}
-                </span>
-              </div>
-
-              {withdrawError && (
-                <p role="alert" className="text-xs text-[#F43F5E] font-medium">
-                  {withdrawError}
-                </p>
-              )}
-
-              <button
-                type="submit"
-                disabled={submittingWithdraw || userCoins < MIN_WITHDRAWAL_COINS || profile.suspended}
-                className="w-full min-h-[46px] rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] disabled:opacity-45 disabled:cursor-not-allowed text-xs font-semibold text-white transition-colors"
-              >
-                {submittingWithdraw
-                  ? 'Processing Request...'
-                  : userCoins < MIN_WITHDRAWAL_COINS
-                    ? `Need ${MIN_WITHDRAWAL_COINS.toLocaleString()} Coins (₹10) to Withdraw`
-                    : `Request ${formatRupees(previewPayout)} Withdrawal`}
-              </button>
-              <p className="text-[11px] text-zinc-400">
-                Android APK plays a rewarded ad when submitting a withdrawal request; payouts always submit safely if no ad is available.
-              </p>
-            </form>
-
-            {/* Withdrawal History */}
-            <div className="lg:col-span-6 rounded-xl border border-white/10 bg-[#121216] p-6 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 className="font-display text-2xl font-bold text-white">
-                    Withdrawal History ({withdrawals.length})
-                  </h2>
-                  <p className="text-[11px] text-zinc-400">100 Coins = ₹10 · Click any request or open modal for full details</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => openHistoryModal('all')}
-                  className="min-h-[38px] px-3.5 py-1.5 rounded-lg border border-white/15 bg-[#09090B] hover:border-[#E11D48]/60 text-xs font-semibold text-white inline-flex items-center gap-1.5 shrink-0"
+            <div className="lg:col-span-6 rounded-xl border border-white/10 bg-[#121216] p-6 space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div
+                  role="tablist"
+                  aria-label="Wallet actions"
+                  className="inline-flex rounded-lg border border-white/10 bg-[#09090B] p-1 gap-1"
                 >
-                  <History className="w-3.5 h-3.5 text-amber-400" />
-                  View Detailed History
-                </button>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2 text-xs tabular-nums">
-                <button
-                  type="button"
-                  onClick={() => openHistoryModal('pending')}
-                  className="rounded-lg border border-amber-500/20 bg-[#09090B] hover:border-amber-500/50 p-2.5 text-left transition-colors"
-                >
-                  <p className="text-[11px] text-zinc-400">Pending</p>
-                  <p className="text-base font-bold text-amber-300 mt-0.5">
-                    {withdrawalSummary.pendingCount}
-                  </p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openHistoryModal('processed')}
-                  className="rounded-lg border border-emerald-500/20 bg-[#09090B] hover:border-emerald-500/50 p-2.5 text-left transition-colors"
-                >
-                  <p className="text-[11px] text-zinc-400">Processed</p>
-                  <p className="text-base font-bold text-emerald-300 mt-0.5">
-                    {withdrawalSummary.processedCount}
-                  </p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openHistoryModal('rejected')}
-                  className="rounded-lg border border-[#E11D48]/25 bg-[#09090B] hover:border-[#E11D48]/60 p-2.5 text-left transition-colors"
-                >
-                  <p className="text-[11px] text-zinc-400">Rejected</p>
-                  <p className="text-base font-bold text-[#FB7185] mt-0.5">
-                    {withdrawalSummary.rejectedCount}
-                  </p>
-                </button>
-              </div>
-
-              {withdrawals.length === 0 ? (
-                <div className="rounded-lg bg-[#09090B] border border-white/10 p-6 text-center text-xs text-zinc-400 space-y-3">
-                  <p>
-                    No withdrawals requested yet. Play matches and earn verified kills/wins to accumulate Spider Coins.
-                  </p>
                   <button
                     type="button"
-                    onClick={() => openHistoryModal('all')}
-                    className="min-h-[36px] px-3.5 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 text-xs font-semibold text-zinc-200"
+                    role="tab"
+                    aria-selected={walletTab === 'withdraw'}
+                    onClick={() => setWalletTab('withdraw')}
+                    className={`min-h-[38px] px-3.5 py-1.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                      walletTab === 'withdraw'
+                        ? 'bg-[#E11D48] text-white'
+                        : 'text-zinc-300 hover:text-white'
+                    }`}
                   >
-                    Open History Modal
+                    <Wallet className="w-3.5 h-3.5" />
+                    Withdraw Coins
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={walletTab === 'add'}
+                    onClick={() => setWalletTab('add')}
+                    className={`min-h-[38px] px-3.5 py-1.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                      walletTab === 'add'
+                        ? 'bg-[#E11D48] text-white'
+                        : 'text-zinc-300 hover:text-white'
+                    }`}
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    Add Coins (QR)
                   </button>
                 </div>
+
+                <div className="text-right tabular-nums">
+                  <p className="text-[11px] text-zinc-400">Redeemable Winning Prize</p>
+                  <p className="text-base font-bold text-amber-400">
+                    {winningCoins.toLocaleString()} Coins ({formatRupees(winningRupees)})
+                  </p>
+                  {addedNonRedeemableCoins > 0 && (
+                    <p className="text-[11px] text-zinc-400">
+                      Total Wallet: {userCoins.toLocaleString()} ({addedNonRedeemableCoins.toLocaleString()} added)
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {walletTab === 'withdraw' ? (
+                <form onSubmit={handleSubmitWithdrawal} className="space-y-4">
+                  <div>
+                    <h2 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+                      <Wallet className="w-5 h-5 text-amber-400" />
+                      Withdraw Winning Prize
+                    </h2>
+                    <p className="text-xs text-zinc-400 mt-1">
+                      <strong className="text-white">Only Winning Prize Coins</strong> earned from matches can be redeemed · Rate: <strong className="text-white">1 Coin = ₹1</strong> · Min:{' '}
+                      <strong className="text-white">{MIN_WITHDRAWAL_COINS} Winning Coins (₹{MIN_WITHDRAWAL_RUPEES})</strong>.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {[50, 100, 250, 500].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        disabled={winningCoins < preset}
+                        onClick={() => setWithdrawCoins(preset)}
+                        className="min-h-[36px] px-3 py-1 rounded-lg border border-white/10 bg-[#09090B] hover:border-amber-400/50 disabled:opacity-40 text-xs font-medium text-zinc-200 tabular-nums"
+                      >
+                        {preset.toLocaleString()} Coins ({formatRupees(calculateRupeesFromCoins(preset))})
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="wd-coins" className="block text-xs text-zinc-300 mb-1">
+                        Winning Coins to Withdraw (Min {MIN_WITHDRAWAL_COINS})
+                      </label>
+                      <input
+                        id="wd-coins"
+                        type="number"
+                        min={MIN_WITHDRAWAL_COINS}
+                        max={Math.max(MIN_WITHDRAWAL_COINS, winningCoins)}
+                        step={1}
+                        required
+                        value={withdrawCoins}
+                        onChange={(e) => setWithdrawCoins(Number(e.target.value))}
+                        className="w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="wd-method" className="block text-xs text-zinc-300 mb-1">
+                        Payout Method
+                      </label>
+                      <select
+                        id="wd-method"
+                        value={withdrawMethod}
+                        onChange={(e) => setWithdrawMethod(e.target.value as WithdrawalMethod)}
+                        className="w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
+                      >
+                        <option value="upi">UPI ID (PhonePe / GPay / Paytm)</option>
+                        <option value="bank">Bank Transfer (Account + IFSC)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="wd-dest" className="block text-xs text-zinc-300 mb-1">
+                      {withdrawMethod === 'upi' ? 'UPI ID' : 'Bank Account Number & IFSC Code'}
+                    </label>
+                    <input
+                      id="wd-dest"
+                      type="text"
+                      required
+                      value={withdrawDest}
+                      onChange={(e) => setWithdrawDest(e.target.value)}
+                      placeholder={
+                        withdrawMethod === 'upi' ? 'e.g. playername@okaxis' : 'e.g. 123456789012 · SBIN0001234'
+                      }
+                      className="w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm text-white"
+                    />
+                  </div>
+
+                  <div className="rounded-lg bg-[#09090B] border border-white/10 px-4 py-3 flex items-center justify-between text-xs tabular-nums">
+                    <span className="text-zinc-400">Estimated Payout</span>
+                    <span className="text-base font-bold text-emerald-400 inline-flex items-center gap-1">
+                      <IndianRupee className="w-4 h-4" />
+                      {formatRupees(previewPayout).replace('₹', '')}
+                    </span>
+                  </div>
+
+                  {withdrawError && (
+                    <p role="alert" className="text-xs text-[#F43F5E] font-medium">
+                      {withdrawError}
+                    </p>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={submittingWithdraw || winningCoins < MIN_WITHDRAWAL_COINS || profile.suspended}
+                    className="w-full min-h-[46px] rounded-lg bg-[#E11D48] hover:bg-[#F43F5E] disabled:opacity-45 disabled:cursor-not-allowed text-xs font-semibold text-white transition-colors"
+                  >
+                    {submittingWithdraw
+                      ? 'Processing Request...'
+                      : winningCoins < MIN_WITHDRAWAL_COINS
+                        ? `Need ${MIN_WITHDRAWAL_COINS.toLocaleString()} Winning Coins (₹${MIN_WITHDRAWAL_RUPEES}) to Withdraw`
+                        : `Redeem ${formatRupees(previewPayout)} Winning Prize`}
+                  </button>
+                </form>
               ) : (
-                <div className="space-y-2.5">
-                  <div className="divide-y divide-white/10">
-                    {withdrawals.slice(0, 4).map((wd) => {
-                      const meta = getWithdrawalStatusMeta(wd);
-                      return (
-                        <div key={wd.id} className="py-3 first:pt-0 last:pb-0 space-y-1 text-xs">
-                          <div className="flex items-center justify-between gap-2 tabular-nums">
+                <form onSubmit={handleSubmitDeposit} className="space-y-4">
+                  <div>
+                    <h2 className="font-display text-2xl font-bold text-white flex items-center gap-2">
+                      <QrCode className="w-5 h-5 text-emerald-400" />
+                      Add Coins via UPI QR
+                    </h2>
+                    <p className="text-xs text-zinc-400 mt-1">
+                      Pay via any UPI app using the official QR code below, then submit your <strong className="text-white">12-digit UTR number</strong> for instant inside verification (<strong className="text-white">₹1 = 1 Coin</strong>). Added coins are non-redeemable; only winning prizes can be withdrawn.
+                    </p>
+                  </div>
+
+                  {hasPaymentQrConfigured ? (
+                    <div className="rounded-xl border border-white/10 bg-[#09090B] p-4 flex flex-col sm:flex-row items-center gap-4">
+                      <div className="bg-white p-2.5 rounded-xl shrink-0 border border-white/20">
+                        <img
+                          src={adminSettings.paymentQrDataUrl}
+                          alt="SPIDER ESPORTS Payment QR Code"
+                          className="w-36 h-36 object-contain"
+                        />
+                      </div>
+                      <div className="space-y-2 text-xs min-w-0 flex-1 text-center sm:text-left">
+                        <p className="font-semibold text-white">
+                          {adminSettings.paymentReceiverName?.trim() || 'SPIDER ESPORTS Official Pay'}
+                        </p>
+                        {adminSettings.paymentUpiId?.trim() && (
+                          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                            <code className="px-2.5 py-1 rounded bg-[#121216] border border-white/10 text-emerald-300 font-mono-tabular break-all">
+                              {adminSettings.paymentUpiId.trim()}
+                            </code>
                             <button
                               type="button"
-                              onClick={() => openHistoryModal(meta.bucket)}
-                              className="text-sm font-semibold text-white hover:text-[#F43F5E] text-left transition-colors"
+                              onClick={handleCopyAdminUpi}
+                              className="min-h-[30px] px-2.5 py-1 rounded border border-white/15 bg-zinc-800 hover:bg-zinc-700 text-[11px] font-semibold text-white inline-flex items-center gap-1"
                             >
-                              {formatRupees(wd.rupees)} · {wd.coins.toLocaleString()} Coins
+                              {copiedUpi ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-400" /> Copied
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" /> Copy UPI
+                                </>
+                              )}
                             </button>
+                          </div>
+                        )}
+                        <p className="text-[11px] text-zinc-400 leading-relaxed">
+                          Scan this QR in PhonePe, Google Pay, Paytm, or BHIM. Copy the 12-digit UTR / Ref No. from your payment receipt and verify below.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-amber-500/35 bg-amber-950/20 p-4 text-xs text-amber-200 space-y-1">
+                      <p className="font-semibold">Payment QR Not Configured Yet</p>
+                      <p className="text-amber-100/80">
+                        The administrator has not uploaded a Payment QR code yet. Check back shortly once the QR is uploaded in the Admin Console.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-2">
+                    {ADD_COIN_PRESETS.map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => setDepositRupees(amt)}
+                        className={`min-h-[34px] px-3 py-1 rounded-lg border text-xs font-medium tabular-nums transition-colors ${
+                          depositRupees === amt
+                            ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                            : 'border-white/10 bg-[#09090B] text-zinc-200 hover:border-white/25'
+                        }`}
+                      >
+                        ₹{amt} (+{amt} Coins)
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="dep-amount" className="block text-xs text-zinc-300 mb-1">
+                        Paid Amount in ₹ (Min ₹{MIN_ADD_COIN_RUPEES})
+                      </label>
+                      <input
+                        id="dep-amount"
+                        type="number"
+                        min={MIN_ADD_COIN_RUPEES}
+                        max={MAX_ADD_COIN_RUPEES}
+                        step={1}
+                        required
+                        value={depositRupees}
+                        onChange={(e) => setDepositRupees(Number(e.target.value))}
+                        className="w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="dep-utr" className="block text-xs text-zinc-300 mb-1">
+                        12-Digit UPI UTR / Ref Number
+                      </label>
+                      <input
+                        id="dep-utr"
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={14}
+                        required
+                        value={depositUtr}
+                        onChange={(e) => setDepositUtr(e.target.value.replace(/[^0-9]/g, '').slice(0, 12))}
+                        placeholder="e.g. 431982745102"
+                        className="w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-sm font-mono-tabular text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="dep-upi" className="block text-xs text-zinc-300 mb-1">
+                        Your UPI ID (Optional)
+                      </label>
+                      <input
+                        id="dep-upi"
+                        type="text"
+                        value={depositPayerUpi}
+                        onChange={(e) => setDepositPayerUpi(e.target.value)}
+                        placeholder="e.g. you@okaxis"
+                        className="w-full min-h-[44px] px-3.5 py-2 rounded-lg border border-white/10 bg-[#09090B] text-xs text-white"
+                      />
+                    </div>
+                    <div>
+                      <span className="block text-xs text-zinc-300 mb-1">
+                        Payment Screenshot (Optional)
+                      </span>
+                      <label
+                        htmlFor="dep-screenshot"
+                        className={`min-h-[44px] w-full px-3 py-2 rounded-lg border border-dashed border-white/20 bg-[#09090B] hover:border-emerald-400/60 text-xs font-medium text-zinc-200 flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
+                          uploadingScreenshot ? 'opacity-60 pointer-events-none' : ''
+                        }`}
+                      >
+                        <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                        {uploadingScreenshot
+                          ? 'Uploading...'
+                          : depositScreenshotUrl
+                            ? 'Receipt Attached ✓'
+                            : 'Choose Receipt'}
+                      </label>
+                      <input
+                        id="dep-screenshot"
+                        type="file"
+                        accept={ALLOWED_IMAGE_INPUT_ACCEPT}
+                        disabled={uploadingScreenshot}
+                        onChange={(e) => void handleDepositScreenshotUpload(e)}
+                        className="sr-only"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg bg-[#09090B] border border-white/10 px-4 py-3 flex items-center justify-between text-xs tabular-nums">
+                    <span className="text-zinc-400">Inside Verification Credit</span>
+                    <span className="text-base font-bold text-amber-400 inline-flex items-center gap-1">
+                      <Coins className="w-4 h-4" />
+                      +{Number.isFinite(depositRupees) && depositRupees > 0 ? Math.floor(depositRupees).toLocaleString() : 0} Coins
+                    </span>
+                  </div>
+
+                  {depositError && (
+                    <p role="alert" className="text-xs text-[#F43F5E] font-medium">
+                      {depositError}
+                    </p>
+                  )}
+                  {depositSuccess && (
+                    <p role="status" className="text-xs text-emerald-400 font-medium">
+                      {depositSuccess}
+                    </p>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={submittingDeposit || !hasPaymentQrConfigured || profile.suspended}
+                    className="w-full min-h-[46px] rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-45 disabled:cursor-not-allowed text-xs font-semibold text-white transition-colors inline-flex items-center justify-center gap-2"
+                  >
+                    <ArrowDownCircle className="w-4 h-4" />
+                    {submittingDeposit
+                      ? 'Verifying UTR & Crediting Wallet...'
+                      : `Verify & Auto-Add ${Number.isFinite(depositRupees) && depositRupees > 0 ? Math.floor(depositRupees).toLocaleString() : 0} Coins`}
+                  </button>
+                </form>
+              )}
+            </div>
+
+            {/* Right Column: Recent QR Deposits (on Add tab) + Withdrawal History */}
+            <div className="lg:col-span-6 rounded-xl border border-white/10 bg-[#121216] p-6 space-y-4">
+              {walletTab === 'add' ? (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h2 className="font-display text-2xl font-bold text-white">
+                        QR Add Coin History ({deposits.length})
+                      </h2>
+                      <p className="text-[11px] text-zinc-400">
+                        1 Coin = ₹1 · Single-use UTR inside verification auto-credits your wallet
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setWalletTab('withdraw')}
+                      className="min-h-[38px] px-3.5 py-1.5 rounded-lg border border-white/15 bg-[#09090B] hover:border-[#E11D48]/60 text-xs font-semibold text-white shrink-0"
+                    >
+                      View Withdrawals ({withdrawals.length})
+                    </button>
+                  </div>
+
+                  {deposits.length === 0 ? (
+                    <div className="rounded-lg bg-[#09090B] border border-white/10 p-6 text-center text-xs text-zinc-400">
+                      No QR coin deposits yet. Scan the QR code, enter your 12-digit UTR, and verify to auto-add coins.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-white/10">
+                      {deposits.slice(0, 6).map((dep) => (
+                        <div key={dep.id} className="py-3 first:pt-0 last:pb-0 space-y-1 text-xs">
+                          <div className="flex items-center justify-between gap-2 tabular-nums">
+                            <span className="text-sm font-semibold text-white">
+                              +{dep.coins.toLocaleString()} Coins ({formatRupees(dep.rupees)})
+                            </span>
                             <span
-                              className={`px-2 py-0.5 rounded border text-[11px] font-semibold ${meta.badgeClass}`}
+                              className={`px-2 py-0.5 rounded border text-[11px] font-semibold ${
+                                dep.status === 'verified'
+                                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                  : 'bg-[#E11D48]/15 text-[#FB7185] border-[#E11D48]/30'
+                              }`}
                             >
-                              {meta.label}
+                              {dep.status === 'verified' ? 'Auto-Verified' : 'Reversed'}
                             </span>
                           </div>
-                          <p className="text-zinc-400">
-                            {wd.method.toUpperCase()} · {wd.destination} · {new Date(wd.createdAt).toLocaleDateString()}
+                          <p className="text-zinc-400 font-mono-tabular">
+                            UTR: {dep.utr} · {new Date(dep.createdAt).toLocaleString()}
                           </p>
-                          {wd.adminNote && (
-                            <p className="text-zinc-300 bg-[#09090B] rounded px-2.5 py-1.5 border border-white/5">
-                              Admin Note: {wd.adminNote}
+                          {dep.adminNote && (
+                            <p className="text-[#FB7185] bg-[#09090B] rounded px-2.5 py-1.5 border border-white/5">
+                              Admin Note: {dep.adminNote}
                             </p>
                           )}
                         </div>
-                      );
-                    })}
-                  </div>
-                  {withdrawals.length > 4 && (
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h2 className="font-display text-2xl font-bold text-white">
+                        Withdrawal History ({withdrawals.length})
+                      </h2>
+                      <p className="text-[11px] text-zinc-400">
+                        1 Coin = ₹1 · Min ₹{MIN_WITHDRAWAL_RUPEES} · Click any request for full details
+                      </p>
+                    </div>
                     <button
                       type="button"
                       onClick={() => openHistoryModal('all')}
-                      className="w-full min-h-[38px] rounded-lg border border-white/10 bg-[#09090B] hover:border-white/20 text-xs font-semibold text-zinc-200"
+                      className="min-h-[38px] px-3.5 py-1.5 rounded-lg border border-white/15 bg-[#09090B] hover:border-[#E11D48]/60 text-xs font-semibold text-white inline-flex items-center gap-1.5 shrink-0"
                     >
-                      View All {withdrawals.length} Redemption Requests
+                      <History className="w-3.5 h-3.5 text-amber-400" />
+                      View Detailed History
                     </button>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-xs tabular-nums">
+                    <button
+                      type="button"
+                      onClick={() => openHistoryModal('pending')}
+                      className="rounded-lg border border-amber-500/20 bg-[#09090B] hover:border-amber-500/50 p-2.5 text-left transition-colors"
+                    >
+                      <p className="text-[11px] text-zinc-400">Pending</p>
+                      <p className="text-base font-bold text-amber-300 mt-0.5">
+                        {withdrawalSummary.pendingCount}
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openHistoryModal('processed')}
+                      className="rounded-lg border border-emerald-500/20 bg-[#09090B] hover:border-emerald-500/50 p-2.5 text-left transition-colors"
+                    >
+                      <p className="text-[11px] text-zinc-400">Processed</p>
+                      <p className="text-base font-bold text-emerald-300 mt-0.5">
+                        {withdrawalSummary.processedCount}
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openHistoryModal('rejected')}
+                      className="rounded-lg border border-[#E11D48]/25 bg-[#09090B] hover:border-[#E11D48]/60 p-2.5 text-left transition-colors"
+                    >
+                      <p className="text-[11px] text-zinc-400">Rejected</p>
+                      <p className="text-base font-bold text-[#FB7185] mt-0.5">
+                        {withdrawalSummary.rejectedCount}
+                      </p>
+                    </button>
+                  </div>
+
+                  {withdrawals.length === 0 ? (
+                    <div className="rounded-lg bg-[#09090B] border border-white/10 p-6 text-center text-xs text-zinc-400 space-y-3">
+                      <p>
+                        No withdrawals requested yet. Win matches and eliminations to reach the ₹{MIN_WITHDRAWAL_RUPEES} winning prize withdrawal threshold.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => openHistoryModal('all')}
+                        className="min-h-[36px] px-3.5 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 text-xs font-semibold text-zinc-200"
+                      >
+                        Open History Modal
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      <div className="divide-y divide-white/10">
+                        {withdrawals.slice(0, 4).map((wd) => {
+                          const meta = getWithdrawalStatusMeta(wd);
+                          return (
+                            <div key={wd.id} className="py-3 first:pt-0 last:pb-0 space-y-1 text-xs">
+                              <div className="flex items-center justify-between gap-2 tabular-nums">
+                                <button
+                                  type="button"
+                                  onClick={() => openHistoryModal(meta.bucket)}
+                                  className="text-sm font-semibold text-white hover:text-[#F43F5E] text-left transition-colors"
+                                >
+                                  {formatRupees(wd.rupees)} · {wd.coins.toLocaleString()} Coins
+                                </button>
+                                <span
+                                  className={`px-2 py-0.5 rounded border text-[11px] font-semibold ${meta.badgeClass}`}
+                                >
+                                  {meta.label}
+                                </span>
+                              </div>
+                              <p className="text-zinc-400">
+                                {wd.method.toUpperCase()} · {wd.destination} · {new Date(wd.createdAt).toLocaleDateString()}
+                              </p>
+                              {wd.adminNote && (
+                                <p className="text-zinc-300 bg-[#09090B] rounded px-2.5 py-1.5 border border-white/5">
+                                  Admin Note: {wd.adminNote}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {withdrawals.length > 4 && (
+                        <button
+                          type="button"
+                          onClick={() => openHistoryModal('all')}
+                          className="w-full min-h-[38px] rounded-lg border border-white/10 bg-[#09090B] hover:border-white/20 text-xs font-semibold text-zinc-200"
+                        >
+                          View All {withdrawals.length} Redemption Requests
+                        </button>
+                      )}
+                    </div>
                   )}
-                </div>
+                </>
               )}
             </div>
           </section>
@@ -916,22 +1258,15 @@ export function ProfileView({
                 Profile Cosmetics
               </h2>
               <span className="text-xs text-zinc-400">
-                Non-cash themes &amp; emblems via Free Fire milestones or optional Rewarded Ad
+                Non-cash themes &amp; emblems unlocked via Free Fire milestones
               </span>
             </div>
-            {rewardAdError && (
-              <p role="alert" className="text-xs text-[#F43F5E] bg-[#09090B] border border-[#E11D48]/30 rounded-lg px-3 py-2">
-                {rewardAdError}
-              </p>
-            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {COSMETIC_CATALOG.map((item) => {
                 const unlocked = isCosmeticUnlocked(item, profile);
                 const equipped =
                   (item.type === 'theme' && profile.activeTheme === item.themeId) ||
                   (item.type === 'badge' && profile.activeBadge === item.id);
-                const isRewardedAdItem = Boolean(item.rewardedAdUnlock);
-                const rewardedDisabled = adminSettings.rewardedAdsEnabled === false;
                 return (
                   <div
                     key={item.id}
@@ -947,40 +1282,20 @@ export function ProfileView({
                       </div>
                       <p className="text-xs text-zinc-400">{item.description}</p>
                     </div>
-                    {isRewardedAdItem && !unlocked ? (
-                      <button
-                        type="button"
-                        disabled={rewardedDisabled || watchingRewardAd}
-                        onClick={() => void handleWatchRewardedAd(item.id)}
-                        className={`min-h-[40px] w-full rounded-lg text-xs font-semibold transition-colors inline-flex items-center justify-center gap-1.5 ${
-                          rewardedDisabled
-                            ? 'bg-zinc-900 text-zinc-500 border border-white/5 cursor-not-allowed'
-                            : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40'
-                        }`}
-                      >
-                        <Play className="w-3.5 h-3.5" />
-                        {watchingRewardAd
-                          ? 'Loading Ad...'
-                          : rewardedDisabled
-                            ? 'Rewarded Ads Paused'
-                            : 'Watch Ad to Unlock (0 Coins)'}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={equipped || !unlocked}
-                        onClick={() => handleEquipCosmetic(item.id)}
-                        className={`min-h-[40px] w-full rounded-lg text-xs font-semibold transition-colors ${
-                          equipped
-                            ? 'bg-zinc-800 text-emerald-400 cursor-default'
-                            : unlocked
-                              ? 'bg-[#E11D48] hover:bg-[#F43F5E] text-white'
-                              : 'bg-zinc-900 text-zinc-500 border border-white/5 cursor-not-allowed'
-                        }`}
-                      >
-                        {equipped ? 'Equipped' : unlocked ? 'Equip' : 'Locked Milestone'}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      disabled={equipped || !unlocked}
+                      onClick={() => handleEquipCosmetic(item.id)}
+                      className={`min-h-[40px] w-full rounded-lg text-xs font-semibold transition-colors ${
+                        equipped
+                          ? 'bg-zinc-800 text-emerald-400 cursor-default'
+                          : unlocked
+                            ? 'bg-[#E11D48] hover:bg-[#F43F5E] text-white'
+                            : 'bg-zinc-900 text-zinc-500 border border-white/5 cursor-not-allowed'
+                      }`}
+                    >
+                      {equipped ? 'Equipped' : unlocked ? 'Equip' : 'Locked Milestone'}
+                    </button>
                   </div>
                 );
               })}
@@ -1174,6 +1489,58 @@ export function ProfileView({
         </>
       )}
 
+      {/* Customer Support (24/7 Telegram) */}
+      {(() => {
+        const supportInfo = getTelegramSupportInfo(adminSettings);
+        return (
+          <section
+            aria-label="Customer Support"
+            className="rounded-xl border border-sky-500/30 bg-[#121216] p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-sky-500/15 border border-sky-500/30 flex items-center justify-center shrink-0">
+                <MessageCircle className="w-5 h-5 text-sky-400" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-sm font-semibold text-white">
+                  Customer Support Available 24/7 · Telegram
+                </h2>
+                <p className="text-xs text-zinc-400">
+                  {supportInfo.configured
+                    ? `Have a problem with a match, room ID, coin deposit, or payout? Message ${supportInfo.displayHandle} directly on Telegram.`
+                    : 'Need help with matches, coin deposits, or withdrawals? Reach our Telegram help desk once connected by admin.'}
+                </p>
+              </div>
+            </div>
+            {supportInfo.configured ? (
+              <a
+                href={supportInfo.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-h-[44px] px-5 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-xs font-bold text-slate-950 inline-flex items-center justify-center gap-2 shrink-0 transition-colors"
+              >
+                <MessageCircle className="w-4 h-4" />
+                Customer Support
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={() =>
+                  onToast(
+                    'Telegram support link is being connected by the admin. Please check back shortly.'
+                  )
+                }
+                className="min-h-[44px] px-5 py-2 rounded-lg border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 text-xs font-semibold text-sky-300 inline-flex items-center justify-center gap-2 shrink-0 transition-colors"
+              >
+                <MessageCircle className="w-4 h-4" />
+                Customer Support
+              </button>
+            )}
+          </section>
+        );
+      })()}
+
       {/* Play Store Compliance, Policies & Disclaimer */}
       <section className="rounded-xl border border-white/10 bg-[#121216] p-6 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1201,16 +1568,7 @@ export function ProfileView({
               onClick={() => setLegalDoc(legalDoc === 'playstore' ? null : 'playstore')}
               className="min-h-[36px] px-3 py-1.5 rounded-lg border border-white/10 text-xs text-zinc-300 hover:text-white"
             >
-              Reward &amp; Withdrawal Policy
-            </button>
-            <button
-              type="button"
-              data-testid="open-gdpr-consent-btn"
-              onClick={() => setConsentModalOpen(true)}
-              className="min-h-[36px] px-3 py-1.5 rounded-lg border border-[#E11D48]/35 bg-[#E11D48]/10 text-xs font-medium text-white hover:bg-[#E11D48]/20 inline-flex items-center gap-1.5"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-[#E11D48]" />
-              Ad Privacy &amp; GDPR Consent ({getAdConsentSummary(consentAccepted).shortLabel})
+              Wallet &amp; Withdrawal Policy
             </button>
           </div>
         </div>
@@ -1219,7 +1577,7 @@ export function ProfileView({
           <div className="rounded-lg bg-[#09090B] border border-white/10 p-4 text-xs text-zinc-300 space-y-2 leading-relaxed">
             <p className="font-semibold text-white">SPIDER ESPORTS Privacy Policy</p>
             <p>
-              We collect only your email address (isolated in private Firestore storage), unique username, and Free Fire IGN/UID to verify identity and manage free tournament brackets. Google AdMob and Google User Messaging Platform (UMP) serve policy-compliant ads and honor your consent choices. Rewarded ads may unlock optional non-cash profile emblems or play during withdrawal submission (never minting extra Spider Coins or cash). You may delete your account and personal records permanently at any time.
+              We collect only your email address (isolated in private Firestore storage), unique username, Free Fire IGN/UID, and optional UPI UTR payment reference data submitted when you add coins or request withdrawals. SPIDER ESPORTS contains zero third-party ad networks or ad trackers. You may delete your account and personal records permanently at any time.
             </p>
           </div>
         )}
@@ -1228,20 +1586,19 @@ export function ProfileView({
           <div className="rounded-lg bg-[#09090B] border border-white/10 p-4 text-xs text-zinc-300 space-y-2 leading-relaxed">
             <p className="font-semibold text-white">Terms &amp; Conditions</p>
             <p>
-              SPIDER ESPORTS hosts strictly free-to-play community tournaments with zero entry fees, zero deposits, and zero paid participation. Players earn Spider Coins exclusively through verified gameplay (playing, kills, and wins) credited by administrators, redeemable at 100 Spider Coins = ₹10.
+              SPIDER ESPORTS hosts competitive Free Fire tournaments with an ad-free experience. Players earn Spider Coins through verified match performance or add coins via the official UPI QR option (1 Coin = ₹1). All UTR submissions undergo inside format, uniqueness, and admin audit checks; fraudulent references are reversed automatically.
             </p>
           </div>
         )}
 
         {legalDoc === 'playstore' && (
           <div className="rounded-lg bg-[#09090B] border border-white/10 p-4 text-xs text-zinc-300 space-y-2 leading-relaxed">
-            <p className="font-semibold text-white">Spider Coin Reward &amp; Withdrawal Rules</p>
+            <p className="font-semibold text-white">Spider Coin Wallet, QR Add &amp; Winning Prize Withdrawal Rules</p>
             <ul className="list-disc pl-5 space-y-1">
-              <li>Single Currency: Spider Coins are the only redeemable reward unit in SPIDER ESPORTS.</li>
-              <li>Earning Rules: Coins are credited strictly by admins for verified match play, eliminations, and tournament wins.</li>
-              <li>Ad Policy: Rewarded ads never mint extra Spider Coins or cash — they unlock optional non-cash profile emblems or accompany withdrawal submissions in the Android app.</li>
-              <li>Conversion Rate: 100 Spider Coins = ₹10 (minimum withdrawal: 100 Coins).</li>
-              <li>Verification: Admins verify match results and withdrawal payout details (UPI / Bank) before approval.</li>
+              <li>Single Currency: 1 Spider Coin = ₹1 across tournament prizes, QR deposits, and withdrawals.</li>
+              <li>Winning Prize Redemption Only: Only Winning Prize Coins earned from verified tournament victories and eliminations can be redeemed (minimum 50 Winning Coins = ₹50) via UPI ID or Bank Transfer.</li>
+              <li>Add Coins via QR (Non-Redeemable): Pay using the admin QR code and submit your unique 12-digit UPI UTR for instant inside verification. Added coins cannot be withdrawn directly.</li>
+              <li>Audit &amp; Security: Admins audit UTR deposits and verify payout details before approving withdrawals.</li>
             </ul>
           </div>
         )}
@@ -1251,28 +1608,13 @@ export function ProfileView({
         </p>
       </section>
 
-      <AdMobBannerSlot
-        settings={adminSettings}
-        screen="profile"
-        placementLabel="Profile Footer"
-        consentAccepted={consentAccepted}
-        onAcceptConsent={() => onUpdateConsent?.(true)}
-      />
-
       <WithdrawalHistoryModal
         open={historyModalOpen}
         withdrawals={withdrawals}
         availableCoins={userCoins}
+        winningCoins={winningCoins}
         initialFilter={historyFilter}
         onClose={() => setHistoryModalOpen(false)}
-        onToast={onToast}
-      />
-
-      <ConsentManagementModal
-        open={consentModalOpen}
-        consentAccepted={consentAccepted}
-        onUpdateConsent={(next) => onUpdateConsent?.(next)}
-        onClose={() => setConsentModalOpen(false)}
         onToast={onToast}
       />
     </div>

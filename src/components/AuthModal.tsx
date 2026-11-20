@@ -233,7 +233,7 @@ export function AuthModal({ open, needsOnboardingUser, onClose, onSuccess }: Aut
                 onChange={(e) => setAdConsent(e.target.checked)}
                 className="mt-0.5 accent-[#E11D48]"
               />
-              <span>I accept the Privacy Policy, Terms &amp; AdMob support notice.</span>
+              <span>I accept the Privacy Policy &amp; Terms of Service.</span>
             </label>
             {error && <p className="text-xs text-[#F43F5E]">{error}</p>}
             <button

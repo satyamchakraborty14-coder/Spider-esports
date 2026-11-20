@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
+import { useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged, reload, sendEmailVerification, type User } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import {
@@ -15,11 +14,13 @@ import {
   subscribeNotifications,
   subscribeResults,
   subscribeTournaments,
+  subscribeUserCoinDeposits,
   subscribeUserProfile,
   subscribeUserRegistrations,
   subscribeUserWithdrawals,
 } from './lib/firestoreService';
 import { SOLE_ADMIN_EMAIL } from './utils/tournamentRules';
+import { getTelegramSupportInfo } from './utils/supportConfig';
 import {
   DEFAULT_ADMIN_SETTINGS,
   SEED_ANNOUNCEMENTS,
@@ -31,6 +32,7 @@ import {
 import type {
   AdminSettings,
   Announcement,
+  CoinDeposit,
   LeaderboardEntry,
   MatchInfo,
   NotificationItem,
@@ -40,14 +42,6 @@ import type {
   UserProfile,
   WithdrawalRequest,
 } from './types/esports';
-import { canShowInterstitial } from './utils/coinSystem';
-import {
-  readGlobalAdConsent,
-  SPIDER_AD_CONSENT_EVENT,
-  SPIDER_AD_CONSENT_STORAGE_KEY,
-  writeGlobalAdConsent,
-} from './utils/adConsent';
-import { resolveEffectiveAdMobConfig } from './utils/admobHelpers';
 import { SplashScreen } from './components/SplashScreen';
 import { BottomNav, TopNav, type AppTab } from './components/Navigation';
 import { HomeView } from './components/HomeView';
@@ -59,12 +53,6 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { MatchDetailsModal } from './components/MatchDetailsModal';
 import { AuthModal } from './components/AuthModal';
 import { NotificationsModal } from './components/NotificationsModal';
-import {
-  initializeAdMobRuntime,
-  registerAdMobLifecycle,
-  showNativeInterstitialAd,
-  syncBannerForScreen,
-} from './lib/admobBridge';
 
 export default function App() {
   const autostart =
@@ -88,18 +76,13 @@ export default function App() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [userRegistrations, setUserRegistrations] = useState<Registration[]>([]);
   const [userWithdrawals, setUserWithdrawals] = useState<WithdrawalRequest[]>([]);
+  const [userDeposits, setUserDeposits] = useState<CoinDeposit[]>([]);
   const [adminSettings, setAdminSettings] = useState<AdminSettings>(DEFAULT_ADMIN_SETTINGS);
 
   const [selectedTournamentId, setSelectedTournamentId] = useState<string | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-
-  // AdMob GDPR Consent State (persisted globally under spider_ad_consent)
-  const [consentAccepted, setConsentAccepted] = useState<boolean>(
-    () => readGlobalAdConsent().personalizedAdsEnabled
-  );
-  const [lastInterstitialAt, setLastInterstitialAt] = useState(0);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -133,6 +116,7 @@ export default function App() {
         setProfileLoaded(false);
         setUserRegistrations([]);
         setUserWithdrawals([]);
+        setUserDeposits([]);
       }
     });
     return () => unsub();
@@ -249,11 +233,13 @@ export default function App() {
     const unsubReg = subscribeUserRegistrations(authUser.uid, setUserRegistrations);
     const unsubNotif = subscribeNotifications(authUser.uid, setNotifications);
     const unsubWd = subscribeUserWithdrawals(authUser.uid, setUserWithdrawals);
+    const unsubDep = subscribeUserCoinDeposits(authUser.uid, setUserDeposits);
     return () => {
       unsubP();
       unsubReg();
       unsubNotif();
       unsubWd();
+      unsubDep();
     };
   }, [authUser]);
 
@@ -285,99 +271,10 @@ export default function App() {
   const needsOnboardingUser =
     authUser && authUser.emailVerified && profileLoaded && !profile ? authUser : null;
 
-  const adminSettingsRef = useRef(adminSettings);
-  const activeTabRef = useRef(activeTab);
-  const consentRef = useRef(consentAccepted);
-  adminSettingsRef.current = adminSettings;
-  activeTabRef.current = activeTab;
-  consentRef.current = consentAccepted;
-
-  const updateConsentPreference = (accepted: boolean) => {
-    setConsentAccepted(accepted);
-    writeGlobalAdConsent(accepted);
-  };
-
-  useEffect(() => {
-    const handleStorageSync = (e: StorageEvent) => {
-      if (e.key === SPIDER_AD_CONSENT_STORAGE_KEY) {
-        setConsentAccepted(readGlobalAdConsent().personalizedAdsEnabled);
-      }
-    };
-    const handleCustomSync = () => {
-      setConsentAccepted(readGlobalAdConsent().personalizedAdsEnabled);
-    };
-    window.addEventListener('storage', handleStorageSync);
-    window.addEventListener(SPIDER_AD_CONSENT_EVENT, handleCustomSync);
-    return () => {
-      window.removeEventListener('storage', handleStorageSync);
-      window.removeEventListener(SPIDER_AD_CONSENT_EVENT, handleCustomSync);
-    };
-  }, []);
-
-  useEffect(() => {
-    void initializeAdMobRuntime(adminSettings, consentAccepted).then(() =>
-      syncBannerForScreen(adminSettings, activeTab, consentAccepted)
-    );
-  }, [adminSettings, consentAccepted]);
-
-  useEffect(() => {
-    void syncBannerForScreen(adminSettings, activeTab, consentAccepted);
-  }, [activeTab, adminSettings, consentAccepted]);
-
-  useEffect(() => {
-    return registerAdMobLifecycle({
-      getSettings: () => adminSettingsRef.current,
-      getScreen: () => activeTabRef.current,
-      getConsent: () => consentRef.current,
-    });
-  }, []);
-
-  const maybeShowNaturalBreakInterstitial = (
-    isSafeContext: boolean,
-    isCompletedAction = false
-  ) => {
-    // Web/PWA never fakes interstitial impressions; interstitials run only inside native Android APK
-    if (!Capacitor.isNativePlatform()) return;
-    if (!isSafeContext || authModalOpen || Boolean(needsOnboardingUser)) return;
-    const effectiveConfig = resolveEffectiveAdMobConfig(adminSettings, {
-      forceTestMode: Boolean(import.meta.env?.DEV),
-    });
-    if (!effectiveConfig.interstitialAdsEnabled) return;
-    const cooldownMs = Math.max(90_000, effectiveConfig.interstitialCooldownMs);
-    if (!isCompletedAction && lastInterstitialAt === 0) {
-      setLastInterstitialAt(Date.now());
-      return;
-    }
-    if (
-      canShowInterstitial({
-        lastShownAtMs: lastInterstitialAt,
-        cooldownMs,
-        isLiveMatchOrJoining:
-          (!isCompletedAction &&
-            Boolean(selectedTournament && selectedTournament.status !== 'completed')) ||
-          authModalOpen ||
-          Boolean(needsOnboardingUser),
-      })
-    ) {
-      void showNativeInterstitialAd(adminSettings, consentAccepted)
-        .then((displayed) => {
-          if (displayed) {
-            setLastInterstitialAt(Date.now());
-          }
-        })
-        .catch(() => undefined);
-    }
-  };
-
   const handleSelectTab = (nextTab: AppTab) => {
     if (nextTab === 'admin' && !isAdmin) {
       return;
     }
-    const isNaturalTransition =
-      nextTab !== activeTab &&
-      (nextTab === 'leaderboard' || nextTab === 'results') &&
-      !selectedTournamentId;
-    maybeShowNaturalBreakInterstitial(isNaturalTransition);
     setActiveTab(nextTab);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -396,8 +293,10 @@ export default function App() {
     }
   };
 
+  const supportInfo = getTelegramSupportInfo(adminSettings);
+
   return (
-    <div className="min-h-screen bg-[#09090B] text-[#F4F4F5] pb-24 md:pb-12">
+    <div className="min-h-screen bg-[#09090B] text-[#F4F4F5] pb-32 md:pb-24">
       {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
 
       <TopNav
@@ -497,10 +396,8 @@ export default function App() {
                 results={displayResults}
                 announcements={displayAnnouncements}
                 leaderboard={displayLeaderboard}
-                registeredTournamentIds={registeredTournamentIds}
                 adminSettings={adminSettings}
-                consentAccepted={consentAccepted}
-                onAcceptConsent={() => updateConsentPreference(true)}
+                registeredTournamentIds={registeredTournamentIds}
                 onSelectTournament={(t) => setSelectedTournamentId(t.id)}
                 onNavigateTab={handleSelectTab}
                 onOpenAuth={() => setAuthModalOpen(true)}
@@ -516,7 +413,6 @@ export default function App() {
                 profile={profile}
                 isSignedIn={Boolean(authUser)}
                 registeredTournamentIds={registeredTournamentIds}
-                adminSettings={adminSettings}
                 onSelectTournament={(t) => setSelectedTournamentId(t.id)}
                 onNavigateResults={() => handleSelectTab('results')}
                 onOpenAuth={() => setAuthModalOpen(true)}
@@ -530,7 +426,6 @@ export default function App() {
                 registrations={userRegistrations}
                 profile={profile}
                 currentUserId={authUser?.uid}
-                adminSettings={adminSettings}
                 onSelectTournament={(t) => setSelectedTournamentId(t.id)}
                 onOpenAuth={() => setAuthModalOpen(true)}
               />
@@ -541,7 +436,6 @@ export default function App() {
                 entries={displayLeaderboard}
                 results={displayResults}
                 currentUserId={authUser?.uid}
-                adminSettings={adminSettings}
                 onNavigateResults={() => handleSelectTab('results')}
               />
             )}
@@ -555,12 +449,11 @@ export default function App() {
                 signInProvider={signInProvider}
                 registrations={userRegistrations}
                 withdrawals={userWithdrawals}
+                deposits={userDeposits}
                 tournaments={displayTournaments}
                 results={displayResults}
                 leaderboard={displayLeaderboard}
                 adminSettings={adminSettings}
-                consentAccepted={consentAccepted}
-                onUpdateConsent={updateConsentPreference}
                 onOpenAuth={() => setAuthModalOpen(true)}
                 onNavigateResults={() => handleSelectTab('results')}
                 onSelectTournament={(t) => setSelectedTournamentId(t.id)}
@@ -588,7 +481,31 @@ export default function App() {
           <p>
             SPIDER ESPORTS is an independent community tournament platform. It is not affiliated with, endorsed by, or sponsored by Garena or Free Fire.
           </p>
-          <p className="shrink-0">100% Free Entry · 100 Coins = ₹10</p>
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            <span>1 Coin = ₹1 · Winning Prizes Redeemable (Min ₹50)</span>
+            {supportInfo.configured ? (
+              <a
+                href={supportInfo.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sky-400 hover:text-sky-300 font-semibold underline underline-offset-2"
+              >
+                Customer Support (Telegram)
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={() =>
+                  showToast(
+                    'Telegram support link is being connected by the admin. Please check back shortly.'
+                  )
+                }
+                className="text-sky-400 hover:text-sky-300 font-semibold underline underline-offset-2"
+              >
+                Customer Support
+              </button>
+            )}
+          </div>
         </footer>
       </main>
 
@@ -607,16 +524,7 @@ export default function App() {
         isSignedIn={Boolean(authUser)}
         isEmailVerified={Boolean(authUser?.emailVerified)}
         isAdmin={isAdmin}
-        adminSettings={adminSettings}
-        consentAccepted={consentAccepted}
-        onAfterJoinConfirmation={() => maybeShowNaturalBreakInterstitial(true, true)}
-        onClose={() => {
-          const closingCompletedMatch = selectedTournament?.status === 'completed';
-          setSelectedTournamentId(null);
-          if (closingCompletedMatch) {
-            maybeShowNaturalBreakInterstitial(true);
-          }
-        }}
+        onClose={() => setSelectedTournamentId(null)}
         onRequireAuth={() => {
           setSelectedTournamentId(null);
           setAuthModalOpen(true);

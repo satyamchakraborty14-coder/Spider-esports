@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Award, CheckCircle2, Coins, Crown, Search, Swords, Trophy } from 'lucide-react';
 import type {
-  AdminSettings,
   Registration,
   Tournament,
   TournamentCategory,
@@ -11,10 +10,13 @@ import type {
   UserProfile,
 } from '../types/esports';
 import { BRAND_ASSETS } from '../lib/seedData';
-import { CATEGORIES_WITH_MODES } from '../utils/tournamentRules';
+import {
+  formatEntryFeeLabel,
+  getModesForMatchesFilter,
+  getTournamentEntryFee,
+} from '../utils/tournamentRules';
 import { buildPlayedMatchesWithResults } from '../utils/resultHelpers';
 import { TournamentCard } from './TournamentCard';
-import { AdMobBannerSlot } from './AdMobUnits';
 
 interface MatchesViewProps {
   tournaments: Tournament[];
@@ -23,7 +25,6 @@ interface MatchesViewProps {
   profile: UserProfile | null;
   isSignedIn: boolean;
   registeredTournamentIds: Set<string>;
-  adminSettings: AdminSettings;
   onSelectTournament: (t: Tournament) => void;
   onNavigateResults: () => void;
   onOpenAuth: () => void;
@@ -36,7 +37,6 @@ export function MatchesView({
   profile,
   isSignedIn,
   registeredTournamentIds,
-  adminSettings,
   onSelectTournament,
   onNavigateResults,
   onOpenAuth,
@@ -67,21 +67,15 @@ export function MatchesView({
     [myMatches]
   );
 
-  const availableModes: TournamentMode[] = useMemo(() => {
-    if (category === 'All') {
-      return [
-        'Solo',
-        'Duo',
-        'Squad',
-        'CS 1v1',
-        'CS 2v2',
-        'CS 4v4',
-        'Lone Wolf 1v1',
-        'Lone Wolf 2v2',
-      ];
-    }
-    return CATEGORIES_WITH_MODES[category];
-  }, [category]);
+  const availableModes: string[] = useMemo(
+    () => getModesForMatchesFilter(category, tournaments),
+    [category, tournaments]
+  );
+
+  const customTournaments = useMemo(
+    () => tournaments.filter((t) => t.category === 'Custom'),
+    [tournaments]
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -89,7 +83,12 @@ export function MatchesView({
       if (category !== 'All' && t.category !== category) return false;
       if (mode !== 'All' && t.mode !== mode) return false;
       if (statusFilter !== 'all' && t.status !== statusFilter) return false;
-      if (q && !t.title.toLowerCase().includes(q) && !t.mapName.toLowerCase().includes(q)) {
+      if (
+        q &&
+        !t.title.toLowerCase().includes(q) &&
+        !t.mapName.toLowerCase().includes(q) &&
+        !t.mode.toLowerCase().includes(q)
+      ) {
         return false;
       }
       return true;
@@ -104,7 +103,7 @@ export function MatchesView({
             Community Tournaments
           </h1>
           <p className="text-sm text-zinc-400 mt-1">
-            All modes are 100% free entry. Select a bracket to view rules, slots, and room credentials.
+            Browse Battle Royale, Clash Squad, Lone Wolf, and Custom modes — view entry fees, prize pools, slots, and room credentials.
           </p>
         </div>
 
@@ -183,7 +182,7 @@ export function MatchesView({
               <Swords className="w-8 h-8 text-zinc-500 mx-auto" />
               <p className="text-base font-semibold text-white">No joined or played matches yet</p>
               <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                Join any free tournament bracket to track your slot, room ID, and verified match results here.
+                Join any tournament bracket to track your slot, room ID, and verified match results here.
               </p>
               <button
                 type="button"
@@ -328,7 +327,7 @@ export function MatchesView({
           {/* Category Filter */}
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by game category">
-              {(['All', 'Battle Royale', 'Clash Squad', 'Lone Wolf'] as const).map((cat) => (
+              {(['All', 'Battle Royale', 'Clash Squad', 'Lone Wolf', 'Custom'] as const).map((cat) => (
                 <button
                   key={cat}
                   type="button"
@@ -395,6 +394,42 @@ export function MatchesView({
             </div>
           </div>
 
+          {customTournaments.length > 0 && (
+            <section
+              aria-label="Custom Modes Created by Admin"
+              className="rounded-xl border border-white/10 bg-[#121216] p-4 space-y-2.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-xs font-semibold text-white">
+                  Custom Modes ({customTournaments.length})
+                </h2>
+                <span className="text-[11px] text-zinc-400">
+                  Admin-created custom brackets
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {customTournaments.map((ct) => {
+                  const feeText = formatEntryFeeLabel(getTournamentEntryFee(ct), true);
+                  return (
+                    <button
+                      key={ct.id}
+                      type="button"
+                      onClick={() => onSelectTournament(ct)}
+                      className="rounded-lg border border-white/10 bg-[#09090B] hover:border-[#E11D48]/60 px-3 py-2 text-left text-xs transition-colors"
+                    >
+                      <p className="font-semibold text-white">
+                        {ct.mode} <span className="text-zinc-400 font-normal">· {ct.title}</span>
+                      </p>
+                      <p className="text-[11px] text-amber-300 tabular-nums mt-0.5">
+                        {feeText === 'FREE' ? 'FREE Entry' : `Entry: ${feeText}`} · Prize +{ct.coinReward.toLocaleString()} Coins
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           {/* Tournament Grid */}
           {filtered.length === 0 ? (
             <div className="rounded-xl border border-white/10 bg-[#121216] p-10 text-center space-y-3">
@@ -429,12 +464,6 @@ export function MatchesView({
           )}
         </>
       )}
-
-      <AdMobBannerSlot
-        settings={adminSettings}
-        screen="matches"
-        placementLabel="Tournament Directory Footer"
-      />
     </div>
   );
 }
